@@ -1,0 +1,17 @@
+{
+  "version": 2,
+  "dgSpecHash": "QUNuFVlvCH4=",
+  "success": true,
+  "projectFilePath": "C:\\Users\\djrmo\\OneDrive\\Desktop\\Storage Shed\\Programming, VBA, and Arduino\\C#\\PdfOverlayTool\\PdfOverlayTool.csproj",
+  "expectedPackageFiles": [
+    "C:\\Users\\djrmo\\.nuget\\packages\\bblanchon.pdfium.linux\\147.0.7690\\bblanchon.pdfium.linux.147.0.7690.nupkg.sha512",
+    "C:\\Users\\djrmo\\.nuget\\packages\\bblanchon.pdfium.macos\\147.0.7690\\bblanchon.pdfium.macos.147.0.7690.nupkg.sha512",
+    "C:\\Users\\djrmo\\.nuget\\packages\\bblanchon.pdfium.win32\\147.0.7690\\bblanchon.pdfium.win32.147.0.7690.nupkg.sha512",
+    "C:\\Users\\djrmo\\.nuget\\packages\\pdftoimage\\5.2.1\\pdftoimage.5.2.1.nupkg.sha512",
+    "C:\\Users\\djrmo\\.nuget\\packages\\skiasharp\\3.119.2\\skiasharp.3.119.2.nupkg.sha512",
+    "C:\\Users\\djrmo\\.nuget\\packages\\skiasharp.nativeassets.linux.nodependencies\\3.119.2\\skiasharp.nativeassets.linux.nodependencies.3.119.2.nupkg.sha512",
+    "C:\\Users\\djrmo\\.nuget\\packages\\skiasharp.nativeassets.macos\\3.119.2\\skiasharp.nativeassets.macos.3.119.2.nupkg.sha512",
+    "C:\\Users\\djrmo\\.nuget\\packages\\skiasharp.nativeassets.win32\\3.119.2\\skiasharp.nativeassets.win32.3.119.2.nupkg.sha512"
+  ],
+  "logs": []
+}
