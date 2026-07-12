@@ -7,7 +7,8 @@
         Width="1200"
         MinHeight="600"
         MinWidth="900"
-        PreviewKeyDown="Window_PreviewKeyDown">
+        PreviewKeyDown="Window_PreviewKeyDown"
+        ToolTipService.ShowOnDisabled="True">
 
         <Window.Resources>
                 <!-- Shared accent palette (buttons + sliders) -->
@@ -31,6 +32,7 @@
                         <Setter Property="FontWeight" Value="SemiBold"/>
                         <Setter Property="SnapsToDevicePixels" Value="True"/>
                         <Setter Property="Cursor" Value="Hand"/>
+                        <Setter Property="ToolTipService.ShowOnDisabled" Value="True"/>
                         <Setter Property="Template">
                                 <Setter.Value>
                                         <ControlTemplate TargetType="Button">
@@ -97,6 +99,7 @@
                         <Setter Property="Foreground"
                                 Value="{StaticResource AccentBrush}"/>
                         <Setter Property="MinHeight" Value="24"/>
+                        <Setter Property="ToolTipService.ShowOnDisabled" Value="True"/>
                         <Setter Property="Template">
                                 <Setter.Value>
                                         <ControlTemplate TargetType="Slider">
@@ -186,6 +189,72 @@
                                 </Setter.Value>
                         </Setter>
                 </Style>
+
+                <!-- Consistent hover help for all controls -->
+                <Style TargetType="ToolTip">
+                        <Setter Property="MaxWidth" Value="480"/>
+                        <Setter Property="Padding" Value="0"/>
+                        <Setter Property="FontSize" Value="12"/>
+                        <Setter Property="Background" Value="#FFFFFF"/>
+                        <Setter Property="BorderBrush" Value="#D5D8DD"/>
+                        <Setter Property="BorderThickness" Value="1"/>
+                        <Setter Property="Foreground" Value="#333333"/>
+                        <Setter Property="HasDropShadow" Value="True"/>
+                        <Setter Property="Template">
+                                <Setter.Value>
+                                        <ControlTemplate TargetType="ToolTip">
+                                                <Border Background="{TemplateBinding Background}"
+                                                        BorderBrush="{TemplateBinding BorderBrush}"
+                                                        BorderThickness="{TemplateBinding BorderThickness}"
+                                                        CornerRadius="6"
+                                                        Padding="12,9"
+                                                        MaxWidth="{TemplateBinding MaxWidth}">
+                                                        <TextBlock Text="{TemplateBinding Content}"
+                                                                   TextWrapping="Wrap"
+                                                                   FontSize="{TemplateBinding FontSize}"
+                                                                   Foreground="{TemplateBinding Foreground}"/>
+                                                </Border>
+                                        </ControlTemplate>
+                                </Setter.Value>
+                        </Setter>
+                </Style>
+
+                <!-- Readable help button (between default size and the prior oversized version) -->
+                <Style x:Key="HelpButtonStyle"
+                       TargetType="Button"
+                       BasedOn="{StaticResource {x:Type Button}}">
+                        <Setter Property="Width" Value="32"/>
+                        <Setter Property="Height" Value="32"/>
+                        <Setter Property="Padding" Value="0"/>
+                        <Setter Property="FontFamily" Value="Segoe UI"/>
+                        <Setter Property="FontSize" Value="18"/>
+                        <Setter Property="FontWeight" Value="Bold"/>
+                        <Setter Property="Foreground" Value="{StaticResource AccentBrush}"/>
+                </Style>
+
+                <Style TargetType="CheckBox">
+                        <Setter Property="ToolTipService.ShowOnDisabled" Value="True"/>
+                </Style>
+
+                <Style TargetType="Slider">
+                        <Setter Property="ToolTipService.ShowOnDisabled" Value="True"/>
+                </Style>
+
+                <Style TargetType="TextBox">
+                        <Setter Property="ToolTipService.ShowOnDisabled" Value="True"/>
+                </Style>
+
+                <Style TargetType="TextBlock">
+                        <Setter Property="ToolTipService.ShowOnDisabled" Value="True"/>
+                </Style>
+
+                <Style TargetType="StackPanel">
+                        <Setter Property="ToolTipService.ShowOnDisabled" Value="True"/>
+                </Style>
+
+                <Style TargetType="Border">
+                        <Setter Property="ToolTipService.ShowOnDisabled" Value="True"/>
+                </Style>
         </Window.Resources>
 
 
@@ -230,7 +299,8 @@
                                 <Button Grid.Column="0"
                                         Content="Load Base"
                                         Width="110"
-                                        Margin="0,0,16,0"
+                                        Margin="0,0,12,0"
+                                        ToolTip="Open the bottom (reference) PDF or image file."
                                         Click="LoadBaseFile_Click"/>
 
                                 <TextBlock Grid.Column="1"
@@ -246,12 +316,13 @@
                                          Margin="0,0,5,0"
                                          HorizontalContentAlignment="Center"
                                          VerticalContentAlignment="Center"
+                                         ToolTip="Base page number. Press Enter to jump to this page."
                                          KeyDown="PageTextBox_KeyDown"/>
 
                                 <TextBlock Grid.Column="3"
                                            VerticalAlignment="Center"
                                            HorizontalAlignment="Right"
-                                           Margin="0,0,16,0">
+                                           Margin="0,0,12,0">
                                            <Run Text="of "/>
                                            <Run x:Name="BasePageCount"
                                                 Text="0"/>
@@ -261,7 +332,8 @@
                                         Grid.Column="4"
                                         Click="PreviousPage_Click"
                                         Padding="4,0"
-                                        Margin="0,0,8,0">
+                                        Margin="0,0,8,0"
+                                        ToolTip="Previous page (moves both base and overlay together).">
 
                                         <Viewbox Width="12"
                                                  Height="16"
@@ -284,7 +356,8 @@
                                         Grid.Column="5"
                                         Click="NextPage_Click"
                                         Padding="4,0"
-                                        Margin="0,0,16,0"
+                                        Margin="0,0,12,0"
+                                        ToolTip="Next page (moves both base and overlay together)."
                                         HorizontalContentAlignment="Center"
                                         VerticalContentAlignment="Center">
 
@@ -309,7 +382,8 @@
                                 <Button Content="Fit to Window"
                                         Grid.Column="6"
                                         Padding="5,0"
-                                        Margin="0,0,16,0"
+                                        Margin="0,0,12,0"
+                                        ToolTip="Resize the view so the current page fits the window."
                                         HorizontalAlignment="Right"
                                         Click="FitToWindow_Click"/>
 
@@ -319,15 +393,16 @@
                                            Grid.Column="8"
                                            Text="DPI"
                                            VerticalAlignment="Center"
-                                           Margin="8,0,8,0"
+                                           Margin="0,0,6,0"
+                                           ToolTip="Rendering resolution. Higher is sharper but uses more memory. Default: 250. Your last value is remembered between sessions."
                                            Visibility="Collapsed"/>
 
                                 <StackPanel x:Name="DpiControls"
                                             Grid.Column="9"
                                             Orientation="Horizontal"
                                             VerticalAlignment="Center"
-                                            Width="130"
-                                            Margin="0,0,12,0"
+                                            Width="128"
+                                            Margin="0,0,10,0"
                                             Visibility="Collapsed">
                                         <Slider x:Name="DpiSlider"
                                                 Width="100"
@@ -337,6 +412,7 @@
                                                 TickFrequency="25"
                                                 TickPlacement="BottomRight"
                                                 IsSnapToTickEnabled="True"
+                                                ToolTip="Rendering resolution (DPI). Higher is sharper but uses more memory. Default: 250. Your last value is remembered between sessions."
                                                 Style="{StaticResource ProminentSliderStyle}"
                                                 ValueChanged="MemoryControl_ValueChanged"
                                                 Thumb.DragStarted="MemorySlider_DragStarted"
@@ -351,15 +427,16 @@
                                            Grid.Column="10"
                                            Text="Page Cache"
                                            VerticalAlignment="Center"
-                                           Margin="8,0,8,0"
+                                           Margin="0,0,6,0"
+                                           ToolTip="Neighbouring pages kept pre-rendered on each side of the current page. Default: 5. Your last value is remembered between sessions."
                                            Visibility="Collapsed"/>
 
                                 <StackPanel x:Name="PageCacheControls"
                                             Grid.Column="11"
                                             Orientation="Horizontal"
                                             VerticalAlignment="Center"
-                                            Width="130"
-                                            Margin="0,0,12,0"
+                                            Width="120"
+                                            Margin="0,0,10,0"
                                             Visibility="Collapsed">
                                         <Slider x:Name="CacheSizeSlider"
                                                 Width="100"
@@ -369,6 +446,7 @@
                                                 TickFrequency="1"
                                                 TickPlacement="BottomRight"
                                                 IsSnapToTickEnabled="True"
+                                                ToolTip="Pages pre-rendered on each side of the current page. Higher is faster paging but uses more memory. Default: 5. Your last value is remembered between sessions."
                                                 Style="{StaticResource ProminentSliderStyle}"
                                                 ValueChanged="MemoryControl_ValueChanged"
                                                 Thumb.DragStarted="MemorySlider_DragStarted"
@@ -383,15 +461,16 @@
                                            Grid.Column="12"
                                            Text="Sensitivity"
                                            VerticalAlignment="Center"
-                                           Margin="8,0,8,0"
+                                           Margin="0,0,6,0"
+                                           ToolTip="Black/white threshold when rendering pages. Default: 200. Your last value is remembered between sessions."
                                            Visibility="Collapsed"/>
 
                                 <StackPanel x:Name="SensitivityControls"
                                             Grid.Column="13"
                                             Orientation="Horizontal"
                                             VerticalAlignment="Center"
-                                            Width="130"
-                                            Margin="0,0,12,0"
+                                            Width="128"
+                                            Margin="0,0,10,0"
                                             Visibility="Collapsed">
                                         <Slider x:Name="ImageThresholdSlider"
                                                 Width="100"
@@ -401,6 +480,7 @@
                                                 TickFrequency="25"
                                                 TickPlacement="BottomRight"
                                                 IsSnapToTickEnabled="False"
+                                                ToolTip="Black/white threshold when rendering. Lower captures more detail; higher is stricter. Default: 200. Your last value is remembered between sessions."
                                                 Style="{StaticResource ProminentSliderStyle}"
                                                 ValueChanged="MemoryControl_ValueChanged"
                                                 Thumb.DragStarted="MemorySlider_DragStarted"
@@ -411,13 +491,32 @@
                                                    Foreground="#222222"/>
                                 </StackPanel>
 
-                                <Button x:Name="AutoModeToggleButton"
-                                        Grid.Column="16"
-                                        Content="AUTO"
-                                        Width="92"
-                                        Margin="0,0,0,0"
-                                        HorizontalAlignment="Right"
-                                        Click="AutoModeToggleButton_Click"/>
+                                <CheckBox Grid.Column="14"
+                                          x:Name="TintImagesCheckBox"
+                                          Margin="0,0,10,0"
+                                          Content="Tint"
+                                          IsChecked="True"
+                                          VerticalAlignment="Center"
+                                          Visibility="Collapsed"
+                                          ToolTip="Colour-code the base green and the overlay red to highlight differences."
+                                          Checked="TintImagesCheckBox_Changed"
+                                          Unchecked="TintImagesCheckBox_Changed"/>
+
+                                <StackPanel Grid.Column="16"
+                                            Orientation="Horizontal"
+                                            HorizontalAlignment="Right">
+                                        <Button x:Name="HelpButton"
+                                                Content="?"
+                                                Style="{StaticResource HelpButtonStyle}"
+                                                Margin="0,0,8,0"
+                                                ToolTip="Open help and about this tool."
+                                                Click="HelpButton_Click"/>
+                                        <Button x:Name="AutoModeToggleButton"
+                                                Content="AUTO"
+                                                Width="92"
+                                                ToolTip="AUTO manages memory automatically. MANUAL exposes DPI, page cache, sensitivity, and tint controls."
+                                                Click="AutoModeToggleButton_Click"/>
+                                </StackPanel>
 
                         </Grid>
                 </Border>
@@ -443,6 +542,7 @@
                                         <ColumnDefinition Width="Auto"/>
                                         <ColumnDefinition Width="Auto"/>
                                         <ColumnDefinition Width="Auto"/>
+                                        <ColumnDefinition Width="Auto"/>
                                         <ColumnDefinition Width="*"/>
                                         <ColumnDefinition Width="Auto"/>
 
@@ -451,7 +551,8 @@
                                 <Button Grid.Column="0"
                                         Content="Load Overlay"
                                         Width="110"
-                                        Margin="0,0,16,0"
+                                        Margin="0,0,12,0"
+                                        ToolTip="Open the top (comparison) PDF or image file."
                                         Click="LoadOverlayFile_Click"/>
 
                                 <TextBlock Grid.Column="1"
@@ -467,12 +568,13 @@
                                          Margin="0,0,5,0"
                                          HorizontalContentAlignment="Center"
                                          VerticalContentAlignment="Center"
+                                         ToolTip="Overlay page number. Press Enter to jump to this page."
                                          KeyDown="PageTextBox_KeyDown"/>
 
                                 <TextBlock Grid.Column="3"
                                            VerticalAlignment="Center"
                                            HorizontalAlignment="Right"
-                                           Margin="0,0,16,0">
+                                           Margin="0,0,12,0">
                                            <Run Text="of "/>
                                            <Run x:Name="OverlayPageCount"
                                                 Text="0"/>
@@ -482,7 +584,8 @@
                                         Grid.Column="4"
                                         Click="PreviousPageOffset_Click"
                                         Padding="4,0"
-                                        Margin="0,0,8,0">
+                                        Margin="0,0,8,0"
+                                        ToolTip="Previous overlay page only (base page stays unchanged).">
 
                                         <Viewbox Width="12"
                                                  Height="16"
@@ -505,7 +608,8 @@
                                         Grid.Column="5"
                                         Click="NextPageOffset_Click"
                                         Padding="4,0"
-                                        Margin="0,0,16,0"
+                                        Margin="0,0,12,0"
+                                        ToolTip="Next overlay page only (base page stays unchanged)."
                                         HorizontalContentAlignment="Center"
                                         VerticalContentAlignment="Center">
 
@@ -528,12 +632,13 @@
                                 <TextBlock Grid.Column="6"
                                            Text="Opacity"
                                            VerticalAlignment="Center"
-                                           Margin="0,0,8,0"/>
+                                           Margin="0,0,8,0"
+                                           ToolTip="Fade the base (slider left) or overlay (slider right). Centre is equal weight. Default: 50 (centre). Your last value is remembered between sessions."/>
 
                                 <Slider Grid.Column="7"
                                         x:Name="OpacitySlider"
-                                        Width="150"
-                                        Margin="0,0,16,0"
+                                        Width="120"
+                                        Margin="0,0,12,0"
                                         Minimum="-100"
                                         Maximum="100"
                                         Value="50"
@@ -541,6 +646,7 @@
                                         TickPlacement="BottomRight"
                                         Ticks="50"
                                         IsSnapToTickEnabled="False"
+                                        ToolTip="Fade the base (left) or overlay (right). Centre is equal weight. Default: 50 (centre). Your last value is remembered between sessions."
                                         Style="{StaticResource ProminentSliderStyle}"
                                         ValueChanged="OverlayControl_ValueChanged"/>
 
@@ -551,12 +657,13 @@
                                 <TextBlock Grid.Column="8"
                                            Text="Scale"
                                            VerticalAlignment="Center"
-                                           Margin="0,0,8,0"/>
+                                           Margin="0,0,8,0"
+                                           ToolTip="Resize the overlay relative to the base (75&#8211;150%)."/>
 
                                 <Slider Grid.Column="9"
                                         x:Name="ScaleSlider"
-                                        Width="150"
-                                        Margin="0,0,16,0"
+                                        Width="120"
+                                        Margin="0,0,12,0"
                                         Minimum="75"
                                         Maximum="150"
                                         Value="100"
@@ -564,37 +671,73 @@
                                         TickPlacement="BottomRight"
                                         Ticks="100"
                                         IsSnapToTickEnabled="False"
+                                        ToolTip="Resize the overlay relative to the base (75&#8211;150%)."
                                         Style="{StaticResource ProminentSliderStyle}"
                                         ValueChanged="OverlayControl_ValueChanged"/>
 
-                                <Button Grid.Column="10"
+                                <StackPanel Grid.Column="10"
+                                            Orientation="Horizontal"
+                                            Margin="0,0,12,0"
+                                            ToolTip="Rotate the overlay in 90&#176; steps or fine-tune by up to &#177;5&#176; for skewed scans.">
+                                        <Button x:Name="RotateCcwButton"
+                                                Content="&#x27F2;"
+                                                FontSize="14"
+                                                Padding="4,0"
+                                                Margin="0,0,4,0"
+                                                VerticalAlignment="Center"
+                                                ToolTip="Rotate overlay 90&#176; counter-clockwise"
+                                                Click="RotateCcw_Click"/>
+                                        <Button x:Name="RotateCwButton"
+                                                Content="&#x27F3;"
+                                                FontSize="14"
+                                                Padding="4,0"
+                                                Margin="0,0,8,0"
+                                                VerticalAlignment="Center"
+                                                ToolTip="Rotate overlay 90&#176; clockwise"
+                                                Click="RotateCw_Click"/>
+                                        <Slider x:Name="RotateFineSlider"
+                                                Width="80"
+                                                Minimum="-5"
+                                                Maximum="5"
+                                                Value="0"
+                                                TickFrequency="1"
+                                                TickPlacement="BottomRight"
+                                                IsSnapToTickEnabled="False"
+                                                ToolTip="Fine rotation (&#177;5&#176;) for skewed scans"
+                                                Style="{StaticResource ProminentSliderStyle}"
+                                                ValueChanged="OverlayControl_ValueChanged"/>
+                                        <TextBlock x:Name="RotateAngleText"
+                                                   Text="0.0&#176;"
+                                                   VerticalAlignment="Center"
+                                                   MinWidth="32"
+                                                   Margin="4,0,0,0"
+                                                   Foreground="#222222"/>
+                                </StackPanel>
+
+                                <Button Grid.Column="11"
                                         Content="Reset"
                                         Padding="5,0"
-                                        Margin="0,0,16,0"
+                                        Margin="0,0,12,0"
+                                        ToolTip="Reset opacity, scale, position, and rotation to defaults."
                                         Click="ResetOverlay_Click"/>
 
-                                <CheckBox Grid.Column="11"
+                                <CheckBox Grid.Column="12"
                                           x:Name="UseFilteredOverlayPickerCheckbox"
                                           Content="Overlay Only Revisions"
                                           IsChecked="False"
-                                          VerticalAlignment="Center"/>
-
-                                <CheckBox Grid.Column="12"
-                                          x:Name="TintImagesCheckBox"
-                                          Margin="16,0,0,0"
-                                          Content="Tint"
-                                          IsChecked="True"
+                                          Margin="0,0,12,0"
                                           VerticalAlignment="Center"
-                                          Visibility="Collapsed"
-                                          Checked="TintImagesCheckBox_Changed"
-                                          Unchecked="TintImagesCheckBox_Changed"/>
+                                          ToolTip="When loading overlay, only list files that share the base file's name prefix."
+                                          Checked="UseFilteredOverlayPickerCheckbox_Changed"
+                                          Unchecked="UseFilteredOverlayPickerCheckbox_Changed"/>
 
                                 <TextBlock x:Name="MemoryUsageTextBlock"
-                                           Grid.Column="14"
+                                           Grid.Column="15"
                                            VerticalAlignment="Center"
                                            Margin="0,0,2,0"
                                            Foreground="#222222"
-                                           Text="Mem: 0.0 MB"/>
+                                           Text="Mem: 0.0 MB"
+                                           ToolTip="Cache memory as % of system RAM / overall system memory load. Red values indicate high usage."/>
 
                                 <!--Controls Below Not Visible-->
 
@@ -630,9 +773,14 @@
                 </Border>
 
                 <!-- Viewer area -->
-                <Border Grid.Row="2"
+                <Border x:Name="ViewerBorder"
+                        Grid.Row="2"
                         Background="#2B2B2B"
-                        Padding="10">
+                        Padding="10"
+                        AllowDrop="True"
+                        ToolTip="Drop a PDF or image here: left half loads base, right half loads overlay. Ctrl + mouse wheel zooms; Ctrl + drag pans."
+                        DragOver="Viewer_DragOver"
+                        Drop="Viewer_Drop">
 
                         <Grid>
                                 <ScrollViewer x:Name="ViewerScrollViewer"
@@ -659,7 +807,8 @@
                                                Stretch="None"
                                                RenderOptions.BitmapScalingMode="HighQuality"
                                                HorizontalAlignment="Left"
-                                               VerticalAlignment="Top"/>
+                                               VerticalAlignment="Top"
+                                               ToolTip="Base (reference) document layer."/>
 
                                         <!-- Top image -->
                                         <Image x:Name="OverlayImage"
@@ -675,6 +824,11 @@
 
                                                 <Image.RenderTransform>
                                                         <TransformGroup>
+                                                                <!-- Rotate first: pivots around the image center in natural
+                                                                     (unscaled) coordinates, then scale/translate apply. -->
+                                                                <RotateTransform x:Name="OverlayRotateTransform"
+                                                                                 Angle="0"/>
+
                                                                 <ScaleTransform x:Name="OverlayScaleTransform"
                                                                                 ScaleX="1"
                                                                                 ScaleY="1"/>

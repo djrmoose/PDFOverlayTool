@@ -98,6 +98,12 @@ namespace PdfOverlayTool
         private bool _memoryPressureActive;
         private int _autoAdjustCooldownSeconds;
 
+        // Whole 90-degree turns of the overlay (0-3); fine skew comes from RotateFineSlider.
+        private int _overlayQuarterTurns;
+
+        private bool _isRestoringSettings;
+        private bool _settingsReady;
+
         private DocumentPane _basePane = null!;
         private DocumentPane _overlayPane = null!;
 
@@ -108,8 +114,13 @@ namespace PdfOverlayTool
             _basePane = new DocumentPane("base", "Base", Colors.LimeGreen, BaseImage, BasePageTextBox, BasePageCount, BaseFileName);
             _overlayPane = new DocumentPane("overlay", "Overlay", Colors.Red, OverlayImage, OverlayPageTextBox, OverlayPageCount, OverlayFileName);
 
+            RestoreUserSettings();
+            _settingsReady = true;
+
             UseFilteredOverlayPickerCheckbox.IsEnabled = false;
             InitializeAutoMemoryAdjustmentTimer();
+
+            Closing += (_, _) => SaveUserSettings();
 
             Loaded += (s, e) =>
             {
@@ -238,6 +249,12 @@ namespace PdfOverlayTool
                 FitToWindowDeferred();
                 UseFilteredOverlayPickerCheckbox.IsEnabled = true;
             }
+            else
+            {
+                // The rotation pivot is the image center, so it must follow size changes
+                // when a different page or file lands in the overlay.
+                ApplyOverlayRotation();
+            }
 
             PrunePageCache(filePath, pageIndex);
             PreloadAdjacentPages(pane, filePath, pageIndex, useTint);
@@ -331,6 +348,46 @@ namespace PdfOverlayTool
             }
 
             return pageNumber - 1;
+        }
+
+        private static readonly string[] SupportedFileExtensions =
+            { ".pdf", ".png", ".jpg", ".jpeg", ".bmp", ".tif", ".tiff" };
+
+        private static string? GetDroppedFilePath(DragEventArgs e)
+        {
+            if (!e.Data.GetDataPresent(DataFormats.FileDrop))
+            {
+                return null;
+            }
+
+            if (e.Data.GetData(DataFormats.FileDrop) is not string[] files || files.Length == 0)
+            {
+                return null;
+            }
+
+            string filePath = files[0];
+            string extension = Path.GetExtension(filePath).ToLowerInvariant();
+            return SupportedFileExtensions.Contains(extension) ? filePath : null;
+        }
+
+        private void Viewer_DragOver(object sender, DragEventArgs e)
+        {
+            e.Effects = GetDroppedFilePath(e) != null ? DragDropEffects.Copy : DragDropEffects.None;
+            e.Handled = true;
+        }
+
+        private void Viewer_Drop(object sender, DragEventArgs e)
+        {
+            string? filePath = GetDroppedFilePath(e);
+            if (filePath == null)
+            {
+                return;
+            }
+
+            // Left half of the viewer loads the base document, right half the overlay.
+            bool isLeftHalf = e.GetPosition(ViewerBorder).X < ViewerBorder.ActualWidth / 2;
+            LoadFileIntoPane(isLeftHalf ? _basePane : _overlayPane, filePath);
+            e.Handled = true;
         }
 
         private string? SelectPdfOrImageFile()
@@ -576,7 +633,98 @@ namespace PdfOverlayTool
 
         private void OverlayControl_ValueChanged(object sender, RoutedPropertyChangedEventArgs<double> e)
         {
+            if (_isRestoringSettings)
+            {
+                return;
+            }
+
             ApplyOverlaySettings();
+            SaveUserSettings();
+        }
+
+        private void HelpButton_Click(object sender, RoutedEventArgs e)
+        {
+            var helpWindow = new HelpWindow { Owner = this };
+            helpWindow.ShowDialog();
+        }
+
+        private void RestoreUserSettings()
+        {
+            UserSettings settings = UserSettings.Load();
+
+            _isRestoringSettings = true;
+            try
+            {
+                if (OpacitySlider != null)
+                {
+                    OpacitySlider.Value = Clamp(settings.Opacity, OpacitySlider.Minimum, OpacitySlider.Maximum);
+                }
+
+                if (DpiSlider != null)
+                {
+                    DpiSlider.Value = Clamp(settings.Dpi, DpiSlider.Minimum, DpiSlider.Maximum);
+                }
+
+                if (CacheSizeSlider != null)
+                {
+                    CacheSizeSlider.Value = Clamp(settings.PageCache, CacheSizeSlider.Minimum, CacheSizeSlider.Maximum);
+                }
+
+                if (ImageThresholdSlider != null)
+                {
+                    ImageThresholdSlider.Value = Clamp(
+                        settings.Sensitivity,
+                        ImageThresholdSlider.Minimum,
+                        ImageThresholdSlider.Maximum);
+                }
+
+                if (UseFilteredOverlayPickerCheckbox != null)
+                {
+                    UseFilteredOverlayPickerCheckbox.IsChecked = settings.OverlayOnlyRevisions;
+                }
+            }
+            finally
+            {
+                _isRestoringSettings = false;
+            }
+
+            // Sync the backing fields (selectedDpi, setOffset, etc.) without a full re-render;
+            // no documents are loaded yet at startup.
+            ApplyMemorySettings(invalidateRenders: false);
+        }
+
+        private void SaveUserSettings()
+        {
+            if (!_settingsReady || _isRestoringSettings)
+            {
+                return;
+            }
+
+            var settings = new UserSettings
+            {
+                Opacity = OpacitySlider?.Value ?? 50,
+                Dpi = DpiSlider?.Value ?? 250,
+                PageCache = CacheSizeSlider?.Value ?? 5,
+                Sensitivity = ImageThresholdSlider?.Value ?? 200,
+                OverlayOnlyRevisions = UseFilteredOverlayPickerCheckbox?.IsChecked == true
+            };
+
+            settings.Save();
+        }
+
+        private static double Clamp(double value, double minimum, double maximum)
+        {
+            return Math.Max(minimum, Math.Min(maximum, value));
+        }
+
+        private void UseFilteredOverlayPickerCheckbox_Changed(object sender, RoutedEventArgs e)
+        {
+            if (_isRestoringSettings)
+            {
+                return;
+            }
+
+            SaveUserSettings();
         }
 
         private void AutoModeToggleButton_Click(object sender, RoutedEventArgs e)
@@ -746,6 +894,11 @@ namespace PdfOverlayTool
 
         private void MemoryControl_ValueChanged(object sender, RoutedPropertyChangedEventArgs<double> e)
         {
+            if (_isRestoringSettings)
+            {
+                return;
+            }
+
             // While the thumb is being dragged, defer the (expensive) refresh until release.
             // Discrete changes (track click, keyboard) are not drags, so they apply immediately.
             if (_isMemorySliderDragging)
@@ -754,6 +907,7 @@ namespace PdfOverlayTool
             }
 
             ApplyMemorySettings(RequiresRenderInvalidation(sender));
+            SaveUserSettings();
         }
 
         private void MemorySlider_DragStarted(object sender, DragStartedEventArgs e)
@@ -765,6 +919,7 @@ namespace PdfOverlayTool
         {
             _isMemorySliderDragging = false;
             ApplyMemorySettings(RequiresRenderInvalidation(sender));
+            SaveUserSettings();
         }
 
         // DPI and Sensitivity change the rendered pixels, so their caches must be rebuilt.
@@ -983,6 +1138,46 @@ namespace PdfOverlayTool
 
             OverlayTranslateTransform.X = XOffsetSlider.Value;
             OverlayTranslateTransform.Y = YOffsetSlider.Value;
+
+            ApplyOverlayRotation();
+        }
+
+        private void ApplyOverlayRotation()
+        {
+            if (OverlayRotateTransform == null || OverlayImage == null)
+            {
+                return;
+            }
+
+            double fineAngle = RotateFineSlider?.Value ?? 0.0;
+            double totalAngle = _overlayQuarterTurns * 90.0 + fineAngle;
+
+            // Pivot around the image center in natural (unscaled) coordinates; the
+            // rotate transform runs before scale/translate in the transform group.
+            OverlayRotateTransform.CenterX = (OverlayImage.Source?.Width ?? OverlayImage.ActualWidth) / 2.0;
+            OverlayRotateTransform.CenterY = (OverlayImage.Source?.Height ?? OverlayImage.ActualHeight) / 2.0;
+            OverlayRotateTransform.Angle = totalAngle;
+
+            if (RotateAngleText != null)
+            {
+                // Show in the -180..180 range so 270 reads as -90.
+                double displayAngle = ((totalAngle + 180.0) % 360.0 + 360.0) % 360.0 - 180.0;
+                RotateAngleText.Text = $"{displayAngle:0.0}\u00B0";
+            }
+        }
+
+        private void RotateCw_Click(object sender, RoutedEventArgs e)
+        {
+            _overlayQuarterTurns = (_overlayQuarterTurns + 1) % 4;
+            ApplyOverlayRotation();
+            SetStatus($"Overlay rotated to {RotateAngleText?.Text}.");
+        }
+
+        private void RotateCcw_Click(object sender, RoutedEventArgs e)
+        {
+            _overlayQuarterTurns = (_overlayQuarterTurns + 3) % 4;
+            ApplyOverlayRotation();
+            SetStatus($"Overlay rotated to {RotateAngleText?.Text}.");
         }
 
         private void ResetOverlay_Click(object sender, RoutedEventArgs e)
@@ -991,6 +1186,8 @@ namespace PdfOverlayTool
             ScaleSlider.Value = 100;
             XOffsetSlider.Value = 0;
             YOffsetSlider.Value = 0;
+            _overlayQuarterTurns = 0;
+            RotateFineSlider.Value = 0;
 
             ApplyOverlaySettings();
 
@@ -1241,7 +1438,8 @@ namespace PdfOverlayTool
 
         private void Window_PreviewKeyDown(object sender, KeyEventArgs e)
         {
-            if (e.Key != Key.Left && e.Key != Key.Right)
+            bool isArrowKey = e.Key == Key.Left || e.Key == Key.Right || e.Key == Key.Up || e.Key == Key.Down;
+            if (!isArrowKey)
             {
                 return;
             }
@@ -1254,8 +1452,33 @@ namespace PdfOverlayTool
                 return;
             }
 
-            ChangePages(e.Key == Key.Right ? 1 : -1);
-            e.Handled = true;
+            // Ctrl+arrows: nudge the overlay one pixel for precise registration.
+            if (Keyboard.Modifiers.HasFlag(ModifierKeys.Control))
+            {
+                if (string.IsNullOrWhiteSpace(_overlayPane?.FilePath))
+                {
+                    return;
+                }
+
+                switch (e.Key)
+                {
+                    case Key.Left: XOffsetSlider.Value -= 1; break;
+                    case Key.Right: XOffsetSlider.Value += 1; break;
+                    case Key.Up: YOffsetSlider.Value -= 1; break;
+                    case Key.Down: YOffsetSlider.Value += 1; break;
+                }
+
+                SetStatus($"Overlay offset: {XOffsetSlider.Value:0}, {YOffsetSlider.Value:0}");
+                e.Handled = true;
+                return;
+            }
+
+            // Plain left/right: page through the documents.
+            if (e.Key == Key.Left || e.Key == Key.Right)
+            {
+                ChangePages(e.Key == Key.Right ? 1 : -1);
+                e.Handled = true;
+            }
         }
 
         private void ChangePages(int delta)
