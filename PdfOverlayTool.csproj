@@ -7,9 +7,16 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <UseWPF>true</UseWPF>
   </PropertyGroup>
+  <PropertyGroup>
+    <ApplicationIcon>Resources\OCT.ico</ApplicationIcon>
+</PropertyGroup>
 
   <ItemGroup>
     <PackageReference Include="PDFtoImage" Version="5.2.1" />
   </ItemGroup>
+
+  <ItemGroup>
+  <Resource Include="Resources\OCT.ico" />
+</ItemGroup>
 
 </Project>

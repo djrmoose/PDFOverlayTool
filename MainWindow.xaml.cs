@@ -7,8 +7,10 @@ using System.IO;
 using System.Windows;
 using System.Windows.Input;
 using System.Windows.Media;
+using System.Threading;
 using System.Threading.Tasks;
 using System.Windows.Controls;
+using System.Windows.Documents;
 using System.Runtime.InteropServices;
 using System.Collections.Generic;
 using System.Windows.Threading;
@@ -18,7 +20,27 @@ namespace PdfOverlayTool
 {
     public partial class MainWindow : Window
     {
+        [StructLayout(LayoutKind.Sequential)]
+        private struct MEMORYSTATUSEX
+        {
+            public uint dwLength;
+            public uint dwMemoryLoad;
+            public ulong ullTotalPhys;
+            public ulong ullAvailPhys;
+            public ulong ullTotalPageFile;
+            public ulong ullAvailPageFile;
+            public ulong ullTotalVirtual;
+            public ulong ullAvailVirtual;
+            public ulong ullAvailExtendedVirtual;
+        }
+
+        [DllImport("kernel32.dll", CharSet = CharSet.Auto, SetLastError = true)]
+        [return: MarshalAs(UnmanagedType.Bool)]
+        private static extern bool GlobalMemoryStatusEx(ref MEMORYSTATUSEX lpBuffer);
+
         private bool _isDragging;
+        private bool _isAutoMode = true;
+        private int _processingOperationCount;
         private Point _lastMousePosition;
         private string? _baseFilePath;
         private string? _overlayFilePath;
@@ -42,11 +64,20 @@ namespace PdfOverlayTool
         private readonly object _pageCacheLock = new();
         private readonly object _pdfCacheLock = new();
 
+        private int selectedDpi = 150;
+        private int imageThreshold = 200;
+
+        private double setOffset = 5; // Number of adjacent pages to preload
+        private DispatcherTimer? _autoMemoryAdjustmentTimer;
+        private int _autoMemoryExceededSeconds;
+        private int _autoMemorySevereExceededSeconds;
+        private bool _autoPerformanceReductionActive;
 
         public MainWindow()
         {
             InitializeComponent();
             UseFilteredOverlayPickerCheckbox.IsEnabled = false;
+            InitializeAutoMemoryAdjustmentTimer();
 
             Loaded += (s, e) =>
             {
@@ -54,6 +85,8 @@ namespace PdfOverlayTool
                 UpdatePageNavigationButtons();
                 UpdateOverlayNavigationButtons();
                 ApplyOverlaySettings();
+                UpdateMemoryUsageDisplay();
+                SetAutoManualMode(_isAutoMode);
                 SetStatus("Load a base PDF and/or overlay PDF to begin.");
             };
         }
@@ -126,13 +159,13 @@ namespace PdfOverlayTool
 
         private void LoadBasePage()
         {
-
             if (string.IsNullOrWhiteSpace(_baseFilePath))
             {
                 return;
             }
 
             int pageIndex = GetPageIndexFromTextBox(BasePageTextBox?.Text);
+            SetProcessingState(true);
 
             try
             {
@@ -151,11 +184,16 @@ namespace PdfOverlayTool
 
                 UpdatePageTextColor(BasePageTextBox!, pageIndex + 1, _basePageCount);
                 UseFilteredOverlayPickerCheckbox.IsEnabled = !string.IsNullOrWhiteSpace(_baseFilePath);
+                UpdateMemoryUsageDisplay();
 
             }
             catch (Exception ex)
             {
                 SetStatus($"Could not load base page: {ex.Message}");
+            }
+            finally
+            {
+                SetProcessingState(false);
             }
         }
 
@@ -167,6 +205,7 @@ namespace PdfOverlayTool
             }
 
             int pageIndex = GetPageIndexFromTextBox(OverlayPageTextBox?.Text);
+            SetProcessingState(true);
 
             try
             {
@@ -183,12 +222,40 @@ namespace PdfOverlayTool
                     useTint);
 
                 UpdatePageTextColor(OverlayPageTextBox!, pageIndex + 1, _overlayPageCount);
+                UpdateMemoryUsageDisplay();
 
             }
             catch (Exception ex)
             {
                 SetStatus($"Could not load overlay page: {ex.Message}");
             }
+            finally
+            {
+                SetProcessingState(false);
+            }
+        }
+
+        private void SetProcessingState(bool isProcessing)
+        {
+            if (ProcessingSpinner == null)
+            {
+                return;
+            }
+
+            if (isProcessing)
+            {
+                Interlocked.Increment(ref _processingOperationCount);
+            }
+            else if (Interlocked.CompareExchange(ref _processingOperationCount, 0, 0) > 0)
+            {
+                Interlocked.Decrement(ref _processingOperationCount);
+            }
+
+            bool showSpinner = Interlocked.CompareExchange(ref _processingOperationCount, 0, 0) > 0;
+            Dispatcher.BeginInvoke(new Action(() =>
+            {
+                ProcessingSpinner.Visibility = showSpinner ? Visibility.Visible : Visibility.Collapsed;
+            }));
         }
 
         private int GetPageIndexFromTextBox(string? text)
@@ -259,7 +326,7 @@ namespace PdfOverlayTool
 
             var options = new PDFtoImage.RenderOptions
             {
-                Dpi = 350
+                Dpi = selectedDpi,
             };
 
             using SKBitmap sourceBitmap = Conversion.ToImage(pdfBytes, pageIndex, null, options);
@@ -305,7 +372,7 @@ namespace PdfOverlayTool
                 0,
                 byteCount);
 
-            int threshold = 200; // adjust this
+            int threshold = imageThreshold; // adjust this
 
             for (int i = 0; i < pixels.Length; i += 4)
             {
@@ -442,6 +509,321 @@ namespace PdfOverlayTool
             ApplyOverlaySettings();
         }
 
+        private void AutoModeToggleButton_Click(object sender, RoutedEventArgs e)
+        {
+            _isAutoMode = !_isAutoMode;
+            SetAutoManualMode(_isAutoMode);
+        }
+
+        private void SetAutoManualMode(bool isAutoMode)
+        {
+            if (AutoModeToggleButton != null)
+            {
+                AutoModeToggleButton.Content = isAutoMode ? "AUTO" : "MANUAL";
+            }
+
+            bool showAdvancedControls = !isAutoMode;
+
+            if (DpiLabel != null) DpiLabel.Visibility = showAdvancedControls ? Visibility.Visible : Visibility.Collapsed;
+            if (DpiControls != null) DpiControls.Visibility = showAdvancedControls ? Visibility.Visible : Visibility.Collapsed;
+            if (PageCacheLabel != null) PageCacheLabel.Visibility = showAdvancedControls ? Visibility.Visible : Visibility.Collapsed;
+            if (PageCacheControls != null) PageCacheControls.Visibility = showAdvancedControls ? Visibility.Visible : Visibility.Collapsed;
+            if (SensitivityLabel != null) SensitivityLabel.Visibility = showAdvancedControls ? Visibility.Visible : Visibility.Collapsed;
+            if (SensitivityControls != null) SensitivityControls.Visibility = showAdvancedControls ? Visibility.Visible : Visibility.Collapsed;
+            if (TintImagesCheckBox != null) TintImagesCheckBox.Visibility = showAdvancedControls ? Visibility.Visible : Visibility.Collapsed;
+
+            UpdateAutoModeButtonAppearance();
+        }
+
+        private void InitializeAutoMemoryAdjustmentTimer()
+        {
+            _autoMemoryAdjustmentTimer = new DispatcherTimer
+            {
+                Interval = TimeSpan.FromSeconds(1)
+            };
+            _autoMemoryAdjustmentTimer.Tick += AutoMemoryAdjustmentTimer_Tick;
+            _autoMemoryAdjustmentTimer.Start();
+        }
+
+        private void AutoMemoryAdjustmentTimer_Tick(object? sender, EventArgs e)
+        {
+            if (!_isAutoMode)
+            {
+                _autoMemoryExceededSeconds = 0;
+                _autoMemorySevereExceededSeconds = 0;
+                return;
+            }
+
+            if (!TryGetMemoryThresholdState(out bool cacheOverThreshold, out bool systemOverThreshold))
+            {
+                return;
+            }
+
+            if (cacheOverThreshold || systemOverThreshold)
+            {
+                if (GetCacheRadius() > 0)
+                {
+                    _autoMemorySevereExceededSeconds = 0;
+                    _autoMemoryExceededSeconds++;
+
+                    if (_autoMemoryExceededSeconds >= 10)
+                    {
+                        ReduceCachePageSize();
+                    }
+                }
+                else
+                {
+                    _autoMemoryExceededSeconds = 0;
+                    _autoMemorySevereExceededSeconds++;
+
+                    if (_autoMemorySevereExceededSeconds >= 30)
+                    {
+                        ReduceDpi();
+                    }
+                }
+            }
+            else
+            {
+                _autoMemoryExceededSeconds = 0;
+                _autoMemorySevereExceededSeconds = 0;
+            }
+        }
+
+        private bool TryGetMemoryThresholdState(out bool cacheOverThreshold, out bool systemOverThreshold)
+        {
+            cacheOverThreshold = false;
+            systemOverThreshold = false;
+
+            long estimatedBytes = 0;
+
+            lock (_pageCacheLock)
+            {
+                foreach (BitmapSource? image in _pageCache.Values)
+                {
+                    estimatedBytes += EstimateBitmapBytes(image);
+                }
+            }
+
+            lock (_tintCacheLock)
+            {
+                foreach (BitmapSource? image in _tintCache.Values)
+                {
+                    estimatedBytes += EstimateBitmapBytes(image);
+                }
+            }
+
+            if (TryGetTotalSystemMemoryBytes(out long totalSystemMemoryBytes) && totalSystemMemoryBytes > 0)
+            {
+                double cachePercentOfSystemMemory = estimatedBytes / (double)totalSystemMemoryBytes * 100.0;
+                cacheOverThreshold = cachePercentOfSystemMemory > 25.0;
+            }
+
+            systemOverThreshold = TryGetSystemMemoryLoadPercent(out double systemMemoryLoadPercent) && systemMemoryLoadPercent > 90.0;
+            return true;
+        }
+
+        private void ReduceCachePageSize()
+        {
+            if (CacheSizeSlider == null)
+            {
+                return;
+            }
+
+            double newCacheRadius = Math.Max(0, CacheSizeSlider.Value - 1);
+            if (newCacheRadius == CacheSizeSlider.Value)
+            {
+                return;
+            }
+
+            CacheSizeSlider.Value = newCacheRadius;
+            _autoPerformanceReductionActive = true;
+            UpdateAutoModeButtonAppearance();
+            SetStatus("Low memory - AUTO performance reduction!");
+            ApplyMemorySettings();
+            _autoMemoryExceededSeconds = 0;
+        }
+
+        private void ReduceDpi()
+        {
+            if (DpiSlider == null)
+            {
+                return;
+            }
+
+            double newDpi = Math.Max(150, DpiSlider.Value - 25);
+            if (newDpi == DpiSlider.Value)
+            {
+                return;
+            }
+
+            DpiSlider.Value = newDpi;
+            _autoPerformanceReductionActive = true;
+            UpdateAutoModeButtonAppearance();
+            SetStatus("Low memory - AUTO performance reduction!");
+            ApplyMemorySettings();
+            _autoMemorySevereExceededSeconds = 0;
+        }
+
+        private void ApplyMemorySettings()
+        {
+            if (DpiSlider == null || ImageThresholdSlider == null || CacheSizeSlider == null)
+            {
+                return;
+            }
+
+            selectedDpi = (int)DpiSlider.Value;
+            imageThreshold = (int)ImageThresholdSlider.Value;
+            setOffset = CacheSizeSlider.Value;
+            UpdateMemoryUsageDisplay();
+
+            if (!string.IsNullOrWhiteSpace(_baseFilePath))
+            {
+                int basePageIndex = GetPageIndexFromTextBox(BasePageTextBox?.Text);
+                PrunePageCache(_baseFilePath, basePageIndex);
+                LoadBasePage();
+            }
+
+            if (!string.IsNullOrWhiteSpace(_overlayFilePath))
+            {
+                int overlayPageIndex = GetPageIndexFromTextBox(OverlayPageTextBox?.Text);
+                PrunePageCache(_overlayFilePath, overlayPageIndex);
+                LoadOverlayPage();
+            }
+        }
+
+        private void MemoryControl_ValueChanged(object sender, RoutedPropertyChangedEventArgs<double> e)
+        {
+            ApplyMemorySettings();
+        }
+
+        private void UpdateAutoModeButtonAppearance()
+        {
+            if (AutoModeToggleButton == null)
+            {
+                return;
+            }
+
+            if (!_isAutoMode || !_autoPerformanceReductionActive)
+            {
+                AutoModeToggleButton.Background = new SolidColorBrush(Color.FromRgb(244, 244, 244));
+                return;
+            }
+
+            AutoModeToggleButton.Background = Brushes.PaleGoldenrod;
+        }
+
+        private void UpdateMemoryUsageDisplay()
+        {
+            if (MemoryUsageTextBlock == null)
+            {
+                return;
+            }
+
+            if (!Dispatcher.CheckAccess())
+            {
+                Dispatcher.BeginInvoke(new Action(UpdateMemoryUsageDisplay));
+                return;
+            }
+
+            long estimatedBytes = 0;
+            int pageCacheCount = 0;
+            int tintCacheCount = 0;
+
+            lock (_pageCacheLock)
+            {
+                pageCacheCount = _pageCache.Count;
+                foreach (BitmapSource? image in _pageCache.Values)
+                {
+                    estimatedBytes += EstimateBitmapBytes(image);
+                }
+            }
+
+            lock (_tintCacheLock)
+            {
+                tintCacheCount = _tintCache.Count;
+                foreach (BitmapSource? image in _tintCache.Values)
+                {
+                    estimatedBytes += EstimateBitmapBytes(image);
+                }
+            }
+
+            if (TryGetTotalSystemMemoryBytes(out long totalSystemMemoryBytes) && totalSystemMemoryBytes > 0)
+            {
+                double cachePercentOfSystemMemory = estimatedBytes / (double)totalSystemMemoryBytes * 100.0;
+                double systemMemoryLoadPercent = 0.0;
+                bool cacheOverThreshold = cachePercentOfSystemMemory > 25.0;
+                bool systemOverThreshold = TryGetSystemMemoryLoadPercent(out systemMemoryLoadPercent) && systemMemoryLoadPercent > 90.0;
+
+                MemoryUsageTextBlock.Inlines.Clear();
+                MemoryUsageTextBlock.Inlines.Add(new Run("Mem: "));
+                MemoryUsageTextBlock.Inlines.Add(new Run($"{cachePercentOfSystemMemory:0.0}%")
+                {
+                    Foreground = cacheOverThreshold ? Brushes.Red : MemoryUsageTextBlock.Foreground
+                });
+                MemoryUsageTextBlock.Inlines.Add(new Run("/"));
+                MemoryUsageTextBlock.Inlines.Add(new Run($"{systemMemoryLoadPercent:0.0}%")
+                {
+                    Foreground = systemOverThreshold ? Brushes.Red : MemoryUsageTextBlock.Foreground
+                });
+            }
+            else
+            {
+                double megabytes = estimatedBytes / (1024.0 * 1024.0);
+                MemoryUsageTextBlock.Inlines.Clear();
+                MemoryUsageTextBlock.Inlines.Add(new Run("Mem: "));
+                MemoryUsageTextBlock.Inlines.Add(new Run($"{megabytes:0.0} MB"));
+                MemoryUsageTextBlock.Inlines.Add(new Run("/"));
+                MemoryUsageTextBlock.Inlines.Add(new Run("--%"));
+            }
+        }
+
+        private bool TryGetTotalSystemMemoryBytes(out long totalSystemMemoryBytes)
+        {
+            totalSystemMemoryBytes = 0;
+
+            MEMORYSTATUSEX memoryStatus = new MEMORYSTATUSEX
+            {
+                dwLength = (uint)Marshal.SizeOf<MEMORYSTATUSEX>()
+            };
+
+            if (!GlobalMemoryStatusEx(ref memoryStatus))
+            {
+                return false;
+            }
+
+            totalSystemMemoryBytes = (long)memoryStatus.ullTotalPhys;
+            return totalSystemMemoryBytes > 0;
+        }
+
+        private bool TryGetSystemMemoryLoadPercent(out double systemMemoryLoadPercent)
+        {
+            systemMemoryLoadPercent = 0.0;
+
+            MEMORYSTATUSEX memoryStatus = new MEMORYSTATUSEX
+            {
+                dwLength = (uint)Marshal.SizeOf<MEMORYSTATUSEX>()
+            };
+
+            if (!GlobalMemoryStatusEx(ref memoryStatus))
+            {
+                return false;
+            }
+
+            systemMemoryLoadPercent = memoryStatus.dwMemoryLoad;
+            return true;
+        }
+
+        private long EstimateBitmapBytes(BitmapSource? bitmap)
+        {
+            if (bitmap == null)
+            {
+                return 0;
+            }
+
+            int bytesPerPixel = (bitmap.Format.BitsPerPixel + 7) / 8;
+            return (long)bitmap.PixelWidth * bitmap.PixelHeight * bytesPerPixel;
+        }
+
         private void ApplyOverlaySettings()
         {
             if (OverlayImage == null ||
@@ -546,7 +928,9 @@ namespace PdfOverlayTool
             if (StatusText != null)
             {
                 StatusText.Text = message;
-                StatusText.Foreground = Brushes.Black;
+                StatusText.Foreground = message.Equals("Low memory - AUTO performance reduction!", StringComparison.OrdinalIgnoreCase)
+                    ? Brushes.Red
+                    : Brushes.Black;
             }
         }
         private void ViewerScrollViewer_PreviewMouseWheel(object sender, MouseWheelEventArgs e)
@@ -952,6 +1336,7 @@ namespace PdfOverlayTool
                 if (!_pageCache.ContainsKey(key))
                 {
                     _pageCache[key] = image;
+                    UpdateMemoryUsageDisplay();
                 }
 
                 return _pageCache[key];
@@ -982,11 +1367,17 @@ namespace PdfOverlayTool
                 if (!_tintCache.ContainsKey(key))
                 {
                     _tintCache[key] = tinted;
+                    UpdateMemoryUsageDisplay();
                 }
 
                 return _tintCache[key];
             }
         }
+        private int GetCacheRadius()
+        {
+            return Math.Max(0, (int)Math.Round(setOffset));
+        }
+
         private string GetPdfBase64(string filePath)
         {
             lock (_pdfCacheLock)
@@ -1019,11 +1410,14 @@ namespace PdfOverlayTool
     bool useTint)
         {
 
+            SetProcessingState(true);
+
             Task.Run(() =>
             {
                 try
                 {
-                    for (int offset = 1; offset <= 5; offset++)
+                    int cacheRadius = GetCacheRadius();
+                    for (int offset = 1; offset <= cacheRadius; offset++)
                     {
                         int prev = currentPageIndex - offset;
                         int next = currentPageIndex + offset;
@@ -1055,6 +1449,10 @@ namespace PdfOverlayTool
                 {
                     // Do not interrupt UI
                 }
+                finally
+                {
+                    SetProcessingState(false);
+                }
             });
         }
 
@@ -1069,12 +1467,14 @@ namespace PdfOverlayTool
         }
         private void PrunePageCache(string filePath, int currentPageIndex)
         {
+            int cacheRadius = GetCacheRadius();
+
             lock (_pageCacheLock)
             {
                 var keysToRemove = _pageCache.Keys
                     .Where(k =>
                         k.path == filePath &&
-                        Math.Abs(k.page - currentPageIndex) > 3)
+                        Math.Abs(k.page - currentPageIndex) > cacheRadius)
                     .ToList();
 
                 foreach (var key in keysToRemove)
@@ -1083,13 +1483,15 @@ namespace PdfOverlayTool
                 }
             }
 
+            UpdateMemoryUsageDisplay();
+
             // Also prune tint cache
             lock (_tintCacheLock)
             {
                 var tintKeysToRemove = _tintCache.Keys
                     .Where(k =>
                         k.path == filePath &&
-                        Math.Abs(k.page - currentPageIndex) > 3)
+                        Math.Abs(k.page - currentPageIndex) > cacheRadius)
                     .ToList();
 
                 foreach (var key in tintKeysToRemove)
@@ -1097,6 +1499,8 @@ namespace PdfOverlayTool
                     _tintCache.Remove(key);
                 }
             }
+
+            UpdateMemoryUsageDisplay();
         }
         private void UpdatePageTextColor(TextBox textBox, int currentPage, int? pageCount)
         {
