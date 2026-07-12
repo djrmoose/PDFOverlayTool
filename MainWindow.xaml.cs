@@ -75,11 +75,17 @@ namespace PdfOverlayTool
         private double _panStartVerticalOffset;
 
         private Dictionary<(string path, int page), BitmapSource> _pageCache = new();
-        private Dictionary<string, string> _pdfCache = new();
+        private Dictionary<string, byte[]> _pdfCache = new();
         private Dictionary<(string path, int page, string role), BitmapSource> _tintCache = new();
         private readonly object _tintCacheLock = new();
         private readonly object _pageCacheLock = new();
         private readonly object _pdfCacheLock = new();
+        private readonly Dictionary<(string path, int page), object> _renderGates = new();
+        private readonly object _renderGatesLock = new();
+
+        // Running total of page + tint cache bytes, maintained on every insert/remove so
+        // memory checks don't have to iterate both caches (they run on every page fetch).
+        private long _estimatedCacheBytes;
 
         private int selectedDpi = 250;
         private int imageThreshold = 200;
@@ -170,48 +176,77 @@ namespace PdfOverlayTool
                 return;
             }
 
+            string filePath = pane.FilePath;
             int pageIndex = GetPageIndexFromTextBox(pane.PageTextBox?.Text);
+            bool useTint = TintImagesCheckBox?.IsChecked == true;
+
+            // Newer LoadPage calls for the same pane invalidate any render still in
+            // flight, so a slow page can never overwrite a page requested after it.
+            // Only ever touched on the UI thread.
+            int loadVersion = ++pane.LoadVersion;
+
+            // Fast path: already rendered - apply immediately with no flicker.
+            BitmapSource? cached = TryGetRenderedPage(filePath, pageIndex);
+            if (cached != null)
+            {
+                ApplyLoadedPage(pane, filePath, pageIndex, cached, useTint);
+                return;
+            }
+
+            // Slow path: render off the UI thread so page turns never freeze the window.
             SetProcessingState(true);
-
-            try
+            Task.Run(() =>
             {
-                pane.OriginalImage = GetCachedPage(pane.FilePath, pageIndex);
-                ApplyPaneTinting(pane, pageIndex);
-
-                if (pane == _basePane)
+                try
                 {
-                    FitToWindowDeferred();
+                    BitmapSource image = GetCachedPage(filePath, pageIndex);
+
+                    // Pre-compute the tint here too; otherwise the first ApplyPaneTinting
+                    // would do this full-page pass on the UI thread.
+                    if (useTint)
+                    {
+                        GetCachedTintedPage(filePath, pageIndex, image, pane.Role, pane.TintColor);
+                    }
+
+                    Dispatcher.BeginInvoke(new Action(() =>
+                    {
+                        if (loadVersion == pane.LoadVersion)
+                        {
+                            ApplyLoadedPage(pane, filePath, pageIndex, image, useTint);
+                        }
+                    }));
                 }
-
-                bool useTint = TintImagesCheckBox?.IsChecked == true;
-                PrunePageCache(pane.FilePath, pageIndex);
-                PreloadAdjacentPages(
-                    pane.FilePath,
-                    pageIndex,
-                    pane.PageCount,
-                    pane.Role,
-                    pane.TintColor,
-                    useTint);
-
-                // A successful load/navigation always shows black; red is only used to
-                // flag a *failed* page-change attempt (see TryAdvancePane).
-                pane.PageTextBox!.Foreground = Brushes.Black;
-
-                if (pane == _basePane)
+                catch (Exception ex)
                 {
-                    UseFilteredOverlayPickerCheckbox.IsEnabled = !string.IsNullOrWhiteSpace(pane.FilePath);
+                    Dispatcher.BeginInvoke(new Action(() =>
+                        SetStatus($"Could not load {pane.Role} page: {ex.Message}", isError: true)));
                 }
+                finally
+                {
+                    SetProcessingState(false);
+                }
+            });
+        }
 
-                UpdateMemoryUsageDisplay();
-            }
-            catch (Exception ex)
+        private void ApplyLoadedPage(DocumentPane pane, string filePath, int pageIndex, BitmapSource image, bool useTint)
+        {
+            pane.OriginalImage = image;
+            ApplyPaneTinting(pane, pageIndex);
+
+            if (pane == _basePane)
             {
-                SetStatus($"Could not load {pane.Role} page: {ex.Message}");
+                FitToWindowDeferred();
+                UseFilteredOverlayPickerCheckbox.IsEnabled = true;
             }
-            finally
-            {
-                SetProcessingState(false);
-            }
+
+            PrunePageCache(filePath, pageIndex);
+            PreloadAdjacentPages(pane, filePath, pageIndex, useTint);
+
+            // A successful load/navigation always shows black; red is only used to
+            // flag a *failed* page-change attempt (see TryAdvancePane).
+            pane.PageTextBox.Foreground = Brushes.Black;
+
+            UpdateMemoryUsageDisplay();
         }
 
         private void SetProcessingState(bool isProcessing)
@@ -347,7 +382,7 @@ namespace PdfOverlayTool
 
         private BitmapSource RenderPdfPageToBitmapSource(string pdfFilePath, int pageIndex)
         {
-            string pdfBytes = GetPdfBase64(pdfFilePath);
+            byte[] pdfBytes = GetPdfBytes(pdfFilePath);
 
             var options = new PDFtoImage.RenderOptions
             {
@@ -397,24 +432,34 @@ namespace PdfOverlayTool
                 0,
                 byteCount);
 
-            int threshold = imageThreshold; // adjust this
+            int threshold = imageThreshold;
+            int width = targetBitmap.Width;
+            int height = targetBitmap.Height;
 
-            for (int i = 0; i < pixels.Length; i += 4)
+            // Rows are independent, so binarize them in parallel; this pass touches every
+            // pixel of a page-sized bitmap and dominates render time after rasterization.
+            Parallel.For(0, height, y =>
             {
-                byte blue = pixels[i];
-                byte green = pixels[i + 1];
-                byte red = pixels[i + 2];
+                int rowStart = y * stride;
+                int rowEnd = rowStart + width * 4;
 
-                // simple brightness
-                int brightness = (red * 299 + green * 587 + blue * 114) / 1000;
+                for (int i = rowStart; i < rowEnd; i += 4)
+                {
+                    byte blue = pixels[i];
+                    byte green = pixels[i + 1];
+                    byte red = pixels[i + 2];
 
-                byte value = (brightness < threshold) ? (byte)0 : (byte)255;
+                    // simple brightness
+                    int brightness = (red * 299 + green * 587 + blue * 114) / 1000;
 
-                pixels[i] = value; // B
-                pixels[i + 1] = value; // G
-                pixels[i + 2] = value; // R
-                pixels[i + 3] = 255;   // full alpha
-            }
+                    byte value = (brightness < threshold) ? (byte)0 : (byte)255;
+
+                    pixels[i] = value; // B
+                    pixels[i + 1] = value; // G
+                    pixels[i + 2] = value; // R
+                    pixels[i + 3] = 255;   // full alpha
+                }
+            });
 
             BitmapSource bitmap = BitmapSource.Create(
                 targetBitmap.Width,
@@ -469,11 +514,11 @@ namespace PdfOverlayTool
 
         private BitmapSource CreateTintedImage(BitmapSource source, Color tintColor)
         {
-            BitmapSource convertedSource = new FormatConvertedBitmap(
-                source,
-                PixelFormats.Bgra32,
-                null,
-                0);
+            // Rendered PDF pages are already Bgra32, so converting again would just be
+            // an extra full-page copy; only convert other formats (loaded image files).
+            BitmapSource convertedSource = source.Format == PixelFormats.Bgra32
+                ? source
+                : new FormatConvertedBitmap(source, PixelFormats.Bgra32, null, 0);
 
             int width = convertedSource.PixelWidth;
             int height = convertedSource.PixelHeight;
@@ -485,23 +530,34 @@ namespace PdfOverlayTool
 
             convertedSource.CopyPixels(sourcePixels, stride, 0);
 
-            for (int i = 0; i < sourcePixels.Length; i += bytesPerPixel)
+            byte tintBlue = tintColor.B;
+            byte tintGreen = tintColor.G;
+            byte tintRed = tintColor.R;
+
+            // Full-page per-pixel pass; rows are independent, so run them in parallel.
+            Parallel.For(0, height, y =>
             {
-                byte blue = sourcePixels[i];
-                byte green = sourcePixels[i + 1];
-                byte red = sourcePixels[i + 2];
-                byte alpha = sourcePixels[i + 3];
+                int rowStart = y * stride;
+                int rowEnd = rowStart + width * bytesPerPixel;
 
-                double brightness = (red + green + blue) / 3.0;
-                double darkness = 255.0 - brightness;
+                for (int i = rowStart; i < rowEnd; i += bytesPerPixel)
+                {
+                    byte blue = sourcePixels[i];
+                    byte green = sourcePixels[i + 1];
+                    byte red = sourcePixels[i + 2];
+                    byte alpha = sourcePixels[i + 3];
 
-                byte outputAlpha = (byte)(darkness * (alpha / 255.0));
+                    // Darker source pixels become more opaque tint (integer math:
+                    // darkness = 255 - average brightness, scaled by source alpha).
+                    int darkness = 255 - (red + green + blue) / 3;
+                    byte outputAlpha = (byte)(darkness * alpha / 255);
 
-                outputPixels[i] = tintColor.B;
-                outputPixels[i + 1] = tintColor.G;
-                outputPixels[i + 2] = tintColor.R;
-                outputPixels[i + 3] = outputAlpha;
-            }
+                    outputPixels[i] = tintBlue;
+                    outputPixels[i + 1] = tintGreen;
+                    outputPixels[i + 2] = tintRed;
+                    outputPixels[i + 3] = outputAlpha;
+                }
+            });
 
             BitmapSource tintedImage = BitmapSource.Create(
                 width,
@@ -770,6 +826,9 @@ namespace PdfOverlayTool
             {
                 _tintCache.Clear();
             }
+
+            // The running total only tracks these two caches, so it resets with them.
+            Interlocked.Exchange(ref _estimatedCacheBytes, 0);
         }
 
         private void UpdateAutoModeButtonAppearance()
@@ -790,25 +849,7 @@ namespace PdfOverlayTool
 
         private long GetEstimatedCacheBytes()
         {
-            long estimatedBytes = 0;
-
-            lock (_pageCacheLock)
-            {
-                foreach (BitmapSource? image in _pageCache.Values)
-                {
-                    estimatedBytes += EstimateBitmapBytes(image);
-                }
-            }
-
-            lock (_tintCacheLock)
-            {
-                foreach (BitmapSource? image in _tintCache.Values)
-                {
-                    estimatedBytes += EstimateBitmapBytes(image);
-                }
-            }
-
-            return estimatedBytes;
+            return Interlocked.Read(ref _estimatedCacheBytes);
         }
 
         private void UpdateMemoryUsageDisplay()
@@ -1318,7 +1359,7 @@ namespace PdfOverlayTool
 
             try
             {
-                string pdfBytes = GetPdfBase64(filePath);
+                byte[] pdfBytes = GetPdfBytes(filePath);
                 return Conversion.GetPageCount(pdfBytes);
             }
             catch
@@ -1394,6 +1435,18 @@ namespace PdfOverlayTool
             }
         }
 
+        // Cache probe only - never renders. Lets LoadPage take a synchronous fast path
+        // for pages that are already rendered.
+        private BitmapSource? TryGetRenderedPage(string filePath, int pageIndex)
+        {
+            lock (_pageCacheLock)
+            {
+                return _pageCache.TryGetValue((filePath, pageIndex), out BitmapSource? cached)
+                    ? cached
+                    : null;
+            }
+        }
+
         private BitmapSource GetCachedPage(string filePath, int pageIndex)
         {
             var key = (filePath, pageIndex);
@@ -1406,18 +1459,49 @@ namespace PdfOverlayTool
                 }
             }
 
-            BitmapSource image = LoadFileAsBitmapSource(filePath, pageIndex);
-
-            lock (_pageCacheLock)
+            // Per-page gate: when an on-demand load and a preload race for the same page,
+            // the second caller waits for the first render instead of duplicating it.
+            object renderGate;
+            lock (_renderGatesLock)
             {
-                if (!_pageCache.ContainsKey(key))
+                if (!_renderGates.TryGetValue(key, out object? existingGate))
                 {
-                    _pageCache[key] = image;
+                    existingGate = new object();
+                    _renderGates[key] = existingGate;
                 }
+                renderGate = existingGate;
+            }
 
-                BitmapSource result = _pageCache[key];
-                UpdateMemoryUsageDisplay();
-                return result;
+            try
+            {
+                lock (renderGate)
+                {
+                    lock (_pageCacheLock)
+                    {
+                        if (_pageCache.TryGetValue(key, out BitmapSource? cached) && cached != null)
+                        {
+                            return cached;
+                        }
+                    }
+
+                    BitmapSource image = LoadFileAsBitmapSource(filePath, pageIndex);
+
+                    lock (_pageCacheLock)
+                    {
+                        _pageCache[key] = image;
+                    }
+
+                    Interlocked.Add(ref _estimatedCacheBytes, EstimateBitmapBytes(image));
+                    UpdateMemoryUsageDisplay();
+                    return image;
+                }
+            }
+            finally
+            {
+                lock (_renderGatesLock)
+                {
+                    _renderGates.Remove(key);
+                }
             }
         }
 
@@ -1440,17 +1524,27 @@ namespace PdfOverlayTool
 
             BitmapSource tinted = CreateTintedImage(source, tintColor);
 
+            bool inserted = false;
+            BitmapSource result;
+
             lock (_tintCacheLock)
             {
                 if (!_tintCache.ContainsKey(key))
                 {
                     _tintCache[key] = tinted;
+                    inserted = true;
                 }
 
-                BitmapSource result = _tintCache[key];
-                UpdateMemoryUsageDisplay();
-                return result;
+                result = _tintCache[key];
             }
+
+            if (inserted)
+            {
+                Interlocked.Add(ref _estimatedCacheBytes, EstimateBitmapBytes(tinted));
+            }
+
+            UpdateMemoryUsageDisplay();
+            return result;
         }
 
         private int GetCacheRadius()
@@ -1458,18 +1552,18 @@ namespace PdfOverlayTool
             return Math.Max(0, (int)Math.Round(setOffset));
         }
 
-        private string GetPdfBase64(string filePath)
+        private byte[] GetPdfBytes(string filePath)
         {
             lock (_pdfCacheLock)
             {
-                if (_pdfCache.TryGetValue(filePath, out string? cachedPdfBytes) &&
+                if (_pdfCache.TryGetValue(filePath, out byte[]? cachedPdfBytes) &&
                     cachedPdfBytes != null)
                 {
                     return cachedPdfBytes;
                 }
             }
 
-            string pdfBytes = Convert.ToBase64String(File.ReadAllBytes(filePath));
+            byte[] pdfBytes = File.ReadAllBytes(filePath);
 
             lock (_pdfCacheLock)
             {
@@ -1482,13 +1576,7 @@ namespace PdfOverlayTool
             }
         }
 
-        private void PreloadAdjacentPages(
-            string filePath,
-            int currentPageIndex,
-            int? pageCount,
-            string role,
-            Color tintColor,
-            bool useTint)
+        private void PreloadAdjacentPages(DocumentPane pane, string filePath, int currentPageIndex, bool useTint)
         {
             // Under AUTO memory pressure, skip speculative preloading entirely. It is the
             // main source of re-render churn that fights the UI for CPU; pages still render
@@ -1498,6 +1586,18 @@ namespace PdfOverlayTool
                 return;
             }
 
+            // Rapid paging fires a preload per page turn; cancel the superseded one so
+            // stale tasks don't keep rendering pages the user has already moved past.
+            // Only touched on the UI thread (ApplyLoadedPage always runs there).
+            pane.PreloadCts?.Cancel();
+            var cts = new CancellationTokenSource();
+            pane.PreloadCts = cts;
+            CancellationToken token = cts.Token;
+
+            int? pageCount = pane.PageCount;
+            string role = pane.Role;
+            Color tintColor = pane.TintColor;
+
             SetProcessingState(true);
 
             Task.Run(() =>
@@ -1505,7 +1605,7 @@ namespace PdfOverlayTool
                 try
                 {
                     int cacheRadius = GetCacheRadius();
-                    for (int offset = 1; offset <= cacheRadius; offset++)
+                    for (int offset = 1; offset <= cacheRadius && !token.IsCancellationRequested; offset++)
                     {
                         int prev = currentPageIndex - offset;
                         int next = currentPageIndex + offset;
@@ -1519,6 +1619,11 @@ namespace PdfOverlayTool
                             {
                                 GetCachedTintedPage(filePath, prev, prevImage, role, tintColor);
                             }
+                        }
+
+                        if (token.IsCancellationRequested)
+                        {
+                            break;
                         }
 
                         // NEXT PAGE
@@ -1548,6 +1653,8 @@ namespace PdfOverlayTool
         {
             int cacheRadius = GetCacheRadius();
 
+            long removedBytes = 0;
+
             lock (_pageCacheLock)
             {
                 var keysToRemove = _pageCache.Keys
@@ -1558,6 +1665,7 @@ namespace PdfOverlayTool
 
                 foreach (var key in keysToRemove)
                 {
+                    removedBytes += EstimateBitmapBytes(_pageCache[key]);
                     _pageCache.Remove(key);
                 }
             }
@@ -1573,10 +1681,12 @@ namespace PdfOverlayTool
 
                 foreach (var key in tintKeysToRemove)
                 {
+                    removedBytes += EstimateBitmapBytes(_tintCache[key]);
                     _tintCache.Remove(key);
                 }
             }
 
+            Interlocked.Add(ref _estimatedCacheBytes, -removedBytes);
             UpdateMemoryUsageDisplay();
         }
 
@@ -1670,6 +1780,8 @@ namespace PdfOverlayTool
             if (string.IsNullOrWhiteSpace(filePath))
                 return;
 
+            long removedBytes = 0;
+
             lock (_pageCacheLock)
             {
                 var pageKeysToRemove = _pageCache.Keys
@@ -1678,6 +1790,7 @@ namespace PdfOverlayTool
 
                 foreach (var key in pageKeysToRemove)
                 {
+                    removedBytes += EstimateBitmapBytes(_pageCache[key]);
                     _pageCache.Remove(key);
                 }
             }
@@ -1690,9 +1803,12 @@ namespace PdfOverlayTool
 
                 foreach (var key in tintKeysToRemove)
                 {
+                    removedBytes += EstimateBitmapBytes(_tintCache[key]);
                     _tintCache.Remove(key);
                 }
             }
+
+            Interlocked.Add(ref _estimatedCacheBytes, -removedBytes);
 
             lock (_pdfCacheLock)
             {
@@ -1735,6 +1851,18 @@ namespace PdfOverlayTool
             public string? FilePath { get; set; }
             public int? PageCount { get; set; }
             public BitmapSource? OriginalImage { get; set; }
+
+            /// <summary>
+            /// Incremented by each LoadPage call (UI thread only); background renders
+            /// compare against it so a stale result is discarded instead of applied.
+            /// </summary>
+            public int LoadVersion { get; set; }
+
+            /// <summary>
+            /// Cancellation for the pane's in-flight preload task (UI thread only);
+            /// each new preload cancels the previous one.
+            /// </summary>
+            public CancellationTokenSource? PreloadCts { get; set; }
         }
     }
 }
