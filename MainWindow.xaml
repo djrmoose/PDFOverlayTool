@@ -6,43 +6,52 @@
         Height="850"
         Width="1200"
         MinHeight="600"
-        MinWidth="900">
+        MinWidth="900"
+        PreviewKeyDown="Window_PreviewKeyDown">
 
         <Window.Resources>
+                <!-- Shared accent palette (buttons + sliders) -->
+                <Color x:Key="AccentColor">#4A90E2</Color>
+                <SolidColorBrush x:Key="AccentBrush" Color="#4A90E2"/>
+                <SolidColorBrush x:Key="AccentPressedBrush" Color="#3E7BC4"/>
+                <SolidColorBrush x:Key="ControlBackgroundBrush" Color="#FFFFFF"/>
+                <SolidColorBrush x:Key="ControlBorderBrush" Color="#D5D8DD"/>
+                <SolidColorBrush x:Key="ControlHoverBrush" Color="#EEF4FC"/>
+                <SolidColorBrush x:Key="ControlPressedBrush" Color="#D9E7F8"/>
+                <SolidColorBrush x:Key="TrackBrush" Color="#D8DBE0"/>
+                <SolidColorBrush x:Key="TextBrush" Color="#2A2A2A"/>
+
                 <Style TargetType="Button">
-                        <Setter Property="Background" Value="#F4F4F4"/>
-                        <Setter Property="Foreground" Value="#222222"/>
-                        <Setter Property="BorderBrush" Value="#A6A6A6"/>
+                        <Setter Property="Background" Value="{StaticResource ControlBackgroundBrush}"/>
+                        <Setter Property="Foreground" Value="{StaticResource TextBrush}"/>
+                        <Setter Property="BorderBrush" Value="{StaticResource ControlBorderBrush}"/>
                         <Setter Property="BorderThickness" Value="1"/>
-                        <Setter Property="Padding" Value="8,3"/>
+                        <Setter Property="Padding" Value="12,6"/>
+                        <Setter Property="FontSize" Value="13"/>
+                        <Setter Property="FontWeight" Value="SemiBold"/>
                         <Setter Property="SnapsToDevicePixels" Value="True"/>
+                        <Setter Property="Cursor" Value="Hand"/>
                         <Setter Property="Template">
                                 <Setter.Value>
                                         <ControlTemplate TargetType="Button">
-                                                <Border x:Name="OuterBorder"
+                                                <Border x:Name="Bd"
                                                         Background="{TemplateBinding Background}"
                                                         BorderBrush="{TemplateBinding BorderBrush}"
                                                         BorderThickness="{TemplateBinding BorderThickness}"
-                                                        CornerRadius="4"
+                                                        CornerRadius="6"
                                                         SnapsToDevicePixels="True">
-                                                        <Border x:Name="InnerBorder"
-                                                                Margin="1"
-                                                                Background="{TemplateBinding Background}"
-                                                                CornerRadius="3"
-                                                                BorderBrush="#D0D0D0"
-                                                                BorderThickness="1">
-                                                                <ContentPresenter HorizontalAlignment="Center"
-                                                                                  VerticalAlignment="Center"
-                                                                                  Margin="{TemplateBinding Padding}"/>
-                                                        </Border>
+                                                        <ContentPresenter HorizontalAlignment="Center"
+                                                                          VerticalAlignment="Center"
+                                                                          Margin="{TemplateBinding Padding}"/>
                                                 </Border>
                                                 <ControlTemplate.Triggers>
                                                         <Trigger Property="IsMouseOver" Value="True">
-                                                                <Setter TargetName="OuterBorder" Property="Background" Value="#E8E8E8"/>
+                                                                <Setter TargetName="Bd" Property="Background" Value="{StaticResource ControlHoverBrush}"/>
+                                                                <Setter TargetName="Bd" Property="BorderBrush" Value="{StaticResource AccentBrush}"/>
                                                         </Trigger>
                                                         <Trigger Property="IsPressed" Value="True">
-                                                                <Setter TargetName="OuterBorder" Property="Margin" Value="1,2,1,0"/>
-                                                                <Setter TargetName="InnerBorder" Property="Margin" Value="0"/>
+                                                                <Setter TargetName="Bd" Property="Background" Value="{StaticResource ControlPressedBrush}"/>
+                                                                <Setter TargetName="Bd" Property="BorderBrush" Value="{StaticResource AccentPressedBrush}"/>
                                                         </Trigger>
                                                         <Trigger Property="IsEnabled" Value="False">
                                                                 <Setter Property="Opacity" Value="0.4"/>
@@ -51,19 +60,43 @@
                                         </ControlTemplate>
                                 </Setter.Value>
                         </Setter>
-                        <Style.Triggers>
-                                <Trigger Property="IsEnabled"
-                                         Value="False">
-                                        <Setter Property="Opacity"
-                                                Value="0.4"/>
-                                </Trigger>
-                        </Style.Triggers>
+                </Style>
+
+                <!-- Circular thumb shared by the modern slider -->
+                <Style x:Key="ModernThumbStyle" TargetType="Thumb">
+                        <Setter Property="Width" Value="16"/>
+                        <Setter Property="Height" Value="16"/>
+                        <Setter Property="Cursor" Value="Hand"/>
+                        <Setter Property="Template">
+                                <Setter.Value>
+                                        <ControlTemplate TargetType="Thumb">
+                                                <Grid>
+                                                        <Ellipse x:Name="ThumbEllipse"
+                                                                 Fill="White"
+                                                                 Stroke="{StaticResource AccentBrush}"
+                                                                 StrokeThickness="2"/>
+                                                </Grid>
+                                                <ControlTemplate.Triggers>
+                                                        <Trigger Property="IsMouseOver" Value="True">
+                                                                <Setter TargetName="ThumbEllipse" Property="Fill" Value="{StaticResource ControlHoverBrush}"/>
+                                                        </Trigger>
+                                                        <Trigger Property="IsDragging" Value="True">
+                                                                <Setter TargetName="ThumbEllipse" Property="Fill" Value="{StaticResource AccentBrush}"/>
+                                                        </Trigger>
+                                                        <Trigger Property="IsEnabled" Value="False">
+                                                                <Setter Property="Opacity" Value="0.4"/>
+                                                        </Trigger>
+                                                </ControlTemplate.Triggers>
+                                        </ControlTemplate>
+                                </Setter.Value>
+                        </Setter>
                 </Style>
 
                 <Style x:Key="ProminentSliderStyle"
                        TargetType="Slider">
                         <Setter Property="Foreground"
-                                Value="#4A4A4A"/>
+                                Value="{StaticResource AccentBrush}"/>
+                        <Setter Property="MinHeight" Value="24"/>
                         <Setter Property="Template">
                                 <Setter.Value>
                                         <ControlTemplate TargetType="Slider">
@@ -76,33 +109,54 @@
 
                                                         <TickBar x:Name="TopTick"
                                                                  Grid.Row="0"
-                                                                 Fill="#6B6B6B"
+                                                                 Fill="#B8BCC4"
                                                                  Placement="Top"
-                                                                 Height="8"
+                                                                 Height="4"
                                                                  Visibility="Collapsed"/>
 
                                                         <Border Grid.Row="1"
-                                                                Height="6"
-                                                                CornerRadius="3"
-                                                                Background="#CFCFCF"
+                                                                Height="4"
+                                                                CornerRadius="2"
+                                                                Background="{StaticResource TrackBrush}"
                                                                 VerticalAlignment="Center"/>
 
                                                         <Track x:Name="PART_Track"
                                                                Grid.Row="1">
+                                                                <Track.DecreaseRepeatButton>
+                                                                        <RepeatButton Command="Slider.DecreaseLarge"
+                                                                                      Focusable="False"
+                                                                                      IsTabStop="False">
+                                                                                <RepeatButton.Template>
+                                                                                        <ControlTemplate TargetType="RepeatButton">
+                                                                                                <Border Height="4"
+                                                                                                        CornerRadius="2"
+                                                                                                        Background="{StaticResource AccentBrush}"
+                                                                                                        VerticalAlignment="Center"/>
+                                                                                        </ControlTemplate>
+                                                                                </RepeatButton.Template>
+                                                                        </RepeatButton>
+                                                                </Track.DecreaseRepeatButton>
+                                                                <Track.IncreaseRepeatButton>
+                                                                        <RepeatButton Command="Slider.IncreaseLarge"
+                                                                                      Focusable="False"
+                                                                                      IsTabStop="False">
+                                                                                <RepeatButton.Template>
+                                                                                        <ControlTemplate TargetType="RepeatButton">
+                                                                                                <Border Background="Transparent"/>
+                                                                                        </ControlTemplate>
+                                                                                </RepeatButton.Template>
+                                                                        </RepeatButton>
+                                                                </Track.IncreaseRepeatButton>
                                                                 <Track.Thumb>
-                                                                        <Thumb Width="12"
-                                                                               Height="12"
-                                                                               Background="#D8D8D8"
-                                                                               BorderBrush="#777777"
-                                                                               BorderThickness="1"/>
+                                                                        <Thumb Style="{StaticResource ModernThumbStyle}"/>
                                                                 </Track.Thumb>
                                                         </Track>
 
                                                         <TickBar x:Name="BottomTick"
                                                                  Grid.Row="2"
-                                                                 Fill="#6B6B6B"
+                                                                 Fill="#B8BCC4"
                                                                  Placement="Bottom"
-                                                                 Height="8"
+                                                                 Height="4"
                                                                  Visibility="Collapsed"/>
                                                 </Grid>
                                                 <ControlTemplate.Triggers>
@@ -175,8 +229,8 @@
 
                                 <Button Grid.Column="0"
                                         Content="Load Base"
-                                        Width="95"
-                                        Margin="0,0,30,0"
+                                        Width="110"
+                                        Margin="0,0,16,0"
                                         Click="LoadBaseFile_Click"/>
 
                                 <TextBlock Grid.Column="1"
@@ -190,12 +244,14 @@
                                          Text="1"
                                          Width="35"
                                          Margin="0,0,5,0"
+                                         HorizontalContentAlignment="Center"
+                                         VerticalContentAlignment="Center"
                                          KeyDown="PageTextBox_KeyDown"/>
 
                                 <TextBlock Grid.Column="3"
                                            VerticalAlignment="Center"
                                            HorizontalAlignment="Right"
-                                           Margin="0,0,20,0">
+                                           Margin="0,0,16,0">
                                            <Run Text="of "/>
                                            <Run x:Name="BasePageCount"
                                                 Text="0"/>
@@ -228,7 +284,7 @@
                                         Grid.Column="5"
                                         Click="NextPage_Click"
                                         Padding="4,0"
-                                        Margin="0,0,30,0"
+                                        Margin="0,0,16,0"
                                         HorizontalContentAlignment="Center"
                                         VerticalContentAlignment="Center">
 
@@ -253,7 +309,7 @@
                                 <Button Content="Fit to Window"
                                         Grid.Column="6"
                                         Padding="5,0"
-                                        Margin="0,0,30,0"
+                                        Margin="0,0,16,0"
                                         HorizontalAlignment="Right"
                                         Click="FitToWindow_Click"/>
 
@@ -282,7 +338,9 @@
                                                 TickPlacement="BottomRight"
                                                 IsSnapToTickEnabled="True"
                                                 Style="{StaticResource ProminentSliderStyle}"
-                                                ValueChanged="MemoryControl_ValueChanged"/>
+                                                ValueChanged="MemoryControl_ValueChanged"
+                                                Thumb.DragStarted="MemorySlider_DragStarted"
+                                                Thumb.DragCompleted="MemorySlider_DragCompleted"/>
                                         <TextBlock Text="{Binding ElementName=DpiSlider, Path=Value, StringFormat={}{0:0}}"
                                                    VerticalAlignment="Center"
                                                    Margin="8,0,0,0"
@@ -312,7 +370,9 @@
                                                 TickPlacement="BottomRight"
                                                 IsSnapToTickEnabled="True"
                                                 Style="{StaticResource ProminentSliderStyle}"
-                                                ValueChanged="MemoryControl_ValueChanged"/>
+                                                ValueChanged="MemoryControl_ValueChanged"
+                                                Thumb.DragStarted="MemorySlider_DragStarted"
+                                                Thumb.DragCompleted="MemorySlider_DragCompleted"/>
                                         <TextBlock Text="{Binding ElementName=CacheSizeSlider, Path=Value, StringFormat={}{0:0}}"
                                                    VerticalAlignment="Center"
                                                    Margin="8,0,0,0"
@@ -336,13 +396,15 @@
                                         <Slider x:Name="ImageThresholdSlider"
                                                 Width="100"
                                                 Minimum="25"
-                                                Maximum="375"
+                                                Maximum="275"
                                                 Value="200"
                                                 TickFrequency="25"
                                                 TickPlacement="BottomRight"
-                                                IsSnapToTickEnabled="True"
+                                                IsSnapToTickEnabled="False"
                                                 Style="{StaticResource ProminentSliderStyle}"
-                                                ValueChanged="MemoryControl_ValueChanged"/>
+                                                ValueChanged="MemoryControl_ValueChanged"
+                                                Thumb.DragStarted="MemorySlider_DragStarted"
+                                                Thumb.DragCompleted="MemorySlider_DragCompleted"/>
                                         <TextBlock Text="{Binding ElementName=ImageThresholdSlider, Path=Value, StringFormat={}{0:0}}"
                                                    VerticalAlignment="Center"
                                                    Margin="8,0,0,0"
@@ -352,7 +414,7 @@
                                 <Button x:Name="AutoModeToggleButton"
                                         Grid.Column="16"
                                         Content="AUTO"
-                                        Width="74"
+                                        Width="92"
                                         Margin="0,0,0,0"
                                         HorizontalAlignment="Right"
                                         Click="AutoModeToggleButton_Click"/>
@@ -388,8 +450,8 @@
 
                                 <Button Grid.Column="0"
                                         Content="Load Overlay"
-                                        Width="95"
-                                        Margin="0,0,30,0"
+                                        Width="110"
+                                        Margin="0,0,16,0"
                                         Click="LoadOverlayFile_Click"/>
 
                                 <TextBlock Grid.Column="1"
@@ -403,12 +465,14 @@
                                          Text="1"
                                          Width="35"
                                          Margin="0,0,5,0"
+                                         HorizontalContentAlignment="Center"
+                                         VerticalContentAlignment="Center"
                                          KeyDown="PageTextBox_KeyDown"/>
 
                                 <TextBlock Grid.Column="3"
                                            VerticalAlignment="Center"
                                            HorizontalAlignment="Right"
-                                           Margin="0,0,20,0">
+                                           Margin="0,0,16,0">
                                            <Run Text="of "/>
                                            <Run x:Name="OverlayPageCount"
                                                 Text="0"/>
@@ -418,7 +482,7 @@
                                         Grid.Column="4"
                                         Click="PreviousPageOffset_Click"
                                         Padding="4,0"
-                                        Margin="0,0,10,0">
+                                        Margin="0,0,8,0">
 
                                         <Viewbox Width="12"
                                                  Height="16"
@@ -441,7 +505,7 @@
                                         Grid.Column="5"
                                         Click="NextPageOffset_Click"
                                         Padding="4,0"
-                                        Margin="0,0,30,0"
+                                        Margin="0,0,16,0"
                                         HorizontalContentAlignment="Center"
                                         VerticalContentAlignment="Center">
 
@@ -464,12 +528,12 @@
                                 <TextBlock Grid.Column="6"
                                            Text="Opacity"
                                            VerticalAlignment="Center"
-                                           Margin="0,0,10,0"/>
+                                           Margin="0,0,8,0"/>
 
                                 <Slider Grid.Column="7"
                                         x:Name="OpacitySlider"
                                         Width="150"
-                                        Margin="0,0,20,0"
+                                        Margin="0,0,16,0"
                                         Minimum="-100"
                                         Maximum="100"
                                         Value="50"
@@ -487,12 +551,12 @@
                                 <TextBlock Grid.Column="8"
                                            Text="Scale"
                                            VerticalAlignment="Center"
-                                           Margin="0,0,10,0"/>
+                                           Margin="0,0,8,0"/>
 
                                 <Slider Grid.Column="9"
                                         x:Name="ScaleSlider"
                                         Width="150"
-                                        Margin="0,0,30,0"
+                                        Margin="0,0,16,0"
                                         Minimum="75"
                                         Maximum="150"
                                         Value="100"
@@ -506,7 +570,7 @@
                                 <Button Grid.Column="10"
                                         Content="Reset"
                                         Padding="5,0"
-                                        Margin="00,0,30,0"
+                                        Margin="0,0,16,0"
                                         Click="ResetOverlay_Click"/>
 
                                 <CheckBox Grid.Column="11"
@@ -517,16 +581,18 @@
 
                                 <CheckBox Grid.Column="12"
                                           x:Name="TintImagesCheckBox"
-                                          Margin="20,0,0,0"
+                                          Margin="16,0,0,0"
                                           Content="Tint"
                                           IsChecked="True"
-                                          VerticalAlignment="Center"                                          Visibility="Collapsed"                                          Checked="TintImagesCheckBox_Changed"
+                                          VerticalAlignment="Center"
+                                          Visibility="Collapsed"
+                                          Checked="TintImagesCheckBox_Changed"
                                           Unchecked="TintImagesCheckBox_Changed"/>
 
                                 <TextBlock x:Name="MemoryUsageTextBlock"
                                            Grid.Column="14"
                                            VerticalAlignment="Center"
-                                           Margin="0,0,0,0"
+                                           Margin="0,0,2,0"
                                            Foreground="#222222"
                                            Text="Mem: 0.0 MB"/>
 
@@ -621,26 +687,6 @@
                                         </Image>
                                 </Grid>
                         </ScrollViewer>
-
-                                <Border x:Name="ProcessingSpinner"
-                                        Width="96"
-                                        Height="96"
-                                        HorizontalAlignment="Center"
-                                        VerticalAlignment="Center"
-                                        Visibility="Collapsed"
-                                        Panel.ZIndex="10">
-                                        <Grid>
-                                                <Ellipse Width="96"
-                                                         Height="96"
-                                                         Stroke="#4A90E2"
-                                                         StrokeThickness="4"
-                                                         Opacity="0.2"/>
-                                                <Path Data="M 48 8 A 40 40 0 1 1 47.9 8"
-                                                      Stroke="#4A90E2"
-                                                      StrokeThickness="4"
-                                                      StrokeStartLineCap="Round"/>
-                                        </Grid>
-                                </Border>
                         </Grid>
                 </Border>
 
@@ -664,6 +710,28 @@
                                            x:Name="StatusText"
                                            Text="Load base and overlay PDFs to begin."
                                            FontSize="13"/>
+
+                                <Grid x:Name="ProcessingSpinner"
+                                      Grid.Column="1"
+                                      Width="200"
+                                      Height="6"
+                                      HorizontalAlignment="Center"
+                                      VerticalAlignment="Center"
+                                      Visibility="Collapsed"
+                                      ClipToBounds="True">
+                                        <Border Background="#D8D8D8"
+                                                CornerRadius="3"/>
+                                        <Border Width="70"
+                                                Height="6"
+                                                HorizontalAlignment="Left"
+                                                Background="#4A90E2"
+                                                CornerRadius="3">
+                                                <Border.RenderTransform>
+                                                        <TranslateTransform x:Name="ProcessingSpinnerTransform"
+                                                                            X="-70"/>
+                                                </Border.RenderTransform>
+                                        </Border>
+                                </Grid>
                                 <TextBlock Grid.Column="2"
                                            Text="Files Loaded:"
                                            FontSize="13"/>

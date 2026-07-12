@@ -7,9 +7,11 @@ using System.IO;
 using System.Windows;
 using System.Windows.Input;
 using System.Windows.Media;
+using System.Windows.Media.Animation;
 using System.Threading;
 using System.Threading.Tasks;
 using System.Windows.Controls;
+using System.Windows.Controls.Primitives;
 using System.Windows.Documents;
 using System.Runtime.InteropServices;
 using System.Collections.Generic;
@@ -38,33 +40,48 @@ namespace PdfOverlayTool
         [return: MarshalAs(UnmanagedType.Bool)]
         private static extern bool GlobalMemoryStatusEx(ref MEMORYSTATUSEX lpBuffer);
 
-        private bool _isDragging;
-        private bool _isAutoMode = true;
-        private int _processingOperationCount;
-        private Point _lastMousePosition;
-        private string? _baseFilePath;
-        private string? _overlayFilePath;
-        private BitmapSource? _baseOriginalImage;
-        private BitmapSource? _overlayOriginalImage;
-        private double _zoom = 1.0;
+        // Zoom
         private const double ZOOM_STEP = 1.05;
         private const double ZOOM_MIN = 0.1;
         private const double ZOOM_MAX = 10.0;
+
+        // Auto memory-management thresholds / timings
+        private const double CACHE_MEMORY_PERCENT_THRESHOLD = 25.0;
+        private const double SYSTEM_MEMORY_LOAD_THRESHOLD = 90.0;
+        private const int CACHE_REDUCE_DELAY_SECONDS = 10;
+        private const int DPI_REDUCE_DELAY_SECONDS = 30;
+        private const int AUTO_ADJUST_COOLDOWN_SECONDS = 5;
+        private const double DPI_REDUCE_STEP = 25;
+        private const double MIN_AUTO_DPI = 150;
+
+        private const string LOW_MEMORY_MESSAGE = "Low memory - AUTO performance reduction!";
+
+        // Indeterminate processing bar geometry (must match MainWindow.xaml).
+        private const double PROCESSING_BAR_WIDTH = 70;
+        private const double PROCESSING_BAR_TRACK_WIDTH = 200;
+
+        // Max trailing characters of a file path shown in the status message.
+        private const int PATH_STATUS_MAX_LENGTH = 50;
+
+        private bool _isDragging;
+        private bool _isMemorySliderDragging;
+        private bool _isAutoMode = true;
+        private int _processingOperationCount;
+        private Point _lastMousePosition;
+        private double _zoom = 1.0;
         private bool _isPanning;
         private Point _panStartPoint;
         private double _panStartHorizontalOffset;
         private double _panStartVerticalOffset;
-        private int? _basePageCount;
-        private int? _overlayPageCount;
+
         private Dictionary<(string path, int page), BitmapSource> _pageCache = new();
         private Dictionary<string, string> _pdfCache = new();
         private Dictionary<(string path, int page, string role), BitmapSource> _tintCache = new();
-        public static double ZOOM_STEP1 => ZOOM_STEP;
         private readonly object _tintCacheLock = new();
         private readonly object _pageCacheLock = new();
         private readonly object _pdfCacheLock = new();
 
-        private int selectedDpi = 150;
+        private int selectedDpi = 250;
         private int imageThreshold = 200;
 
         private double setOffset = 5; // Number of adjacent pages to preload
@@ -72,10 +89,19 @@ namespace PdfOverlayTool
         private int _autoMemoryExceededSeconds;
         private int _autoMemorySevereExceededSeconds;
         private bool _autoPerformanceReductionActive;
+        private bool _memoryPressureActive;
+        private int _autoAdjustCooldownSeconds;
+
+        private DocumentPane _basePane = null!;
+        private DocumentPane _overlayPane = null!;
 
         public MainWindow()
         {
             InitializeComponent();
+
+            _basePane = new DocumentPane("base", "Base", Colors.LimeGreen, BaseImage, BasePageTextBox, BasePageCount, BaseFileName);
+            _overlayPane = new DocumentPane("overlay", "Overlay", Colors.Red, OverlayImage, OverlayPageTextBox, OverlayPageCount, OverlayFileName);
+
             UseFilteredOverlayPickerCheckbox.IsEnabled = false;
             InitializeAutoMemoryAdjustmentTimer();
 
@@ -91,65 +117,45 @@ namespace PdfOverlayTool
             };
         }
 
-
         private void LoadBaseFile_Click(object sender, RoutedEventArgs e)
         {
-            string? filePath = SelectPdfOrImageFile();
-
-            if (filePath == null)
-            {
-                return;
-            }
-
-            ClearCachesForFile(_baseFilePath);
-            _baseFilePath = filePath;
-            _basePageCount = GetPdfPageCount(filePath);
-            BasePageTextBox.Text = "1";
-            LoadBasePage();
-            UpdatePageNavigationButtons();
-            UpdateOverlayNavigationButtons();
-            UpdatePageInputState();
-
-            SetStatus($"Loaded base file: {filePath}");
-            BaseFileName.Text = Path.GetFileNameWithoutExtension(filePath);
-            BasePageCount.Text = GetPdfPageCount(filePath).ToString() ?? "0";
+            LoadFileIntoPane(_basePane, SelectPdfOrImageFile());
         }
 
         private void LoadOverlayFile_Click(object sender, RoutedEventArgs e)
         {
-            string? filePath;
-            if (UseFilteredOverlayPickerCheckbox?.IsChecked == true)
-            {
-                filePath = SelectOverlayFileFiltered();
-            }
-            else
-            {
-                filePath = SelectPdfOrImageFile();
-            }
+            string? filePath = UseFilteredOverlayPickerCheckbox?.IsChecked == true
+                ? SelectOverlayFileFiltered()
+                : SelectPdfOrImageFile();
 
+            LoadFileIntoPane(_overlayPane, filePath);
+        }
+
+        private void LoadFileIntoPane(DocumentPane pane, string? filePath)
+        {
             if (filePath == null)
             {
                 return;
             }
 
-            ClearCachesForFile(_overlayFilePath);
-            _overlayFilePath = filePath;
-            _overlayPageCount = GetPdfPageCount(filePath);
-            OverlayPageTextBox.Text = "1";
-            LoadOverlayPage();
+            ClearCachesForFile(pane.FilePath);
+            pane.FilePath = filePath;
+            pane.PageCount = GetPdfPageCount(filePath);
+            pane.PageTextBox.Text = "1";
+            LoadPage(pane);
             UpdatePageNavigationButtons();
             UpdateOverlayNavigationButtons();
             UpdatePageInputState();
 
-            SetStatus($"Loaded overlay file: {filePath}");
-            OverlayFileName.Text = Path.GetFileNameWithoutExtension(filePath);
-            OverlayPageCount.Text = GetPdfPageCount(filePath).ToString() ?? "0";
+            SetStatus($"Loaded {pane.Role} file: {TrimPathForDisplay(filePath)}");
+            pane.FileNameTextBlock.Text = Path.GetFileNameWithoutExtension(filePath);
+            pane.PageCountRun.Text = pane.PageCount?.ToString() ?? "0";
         }
 
         private void ReloadPages_Click(object sender, RoutedEventArgs e)
         {
-            LoadBasePage();
-            LoadOverlayPage();
+            LoadPage(_basePane);
+            LoadPage(_overlayPane);
             UpdatePageNavigationButtons();
             UpdateOverlayNavigationButtons();
 
@@ -157,77 +163,50 @@ namespace PdfOverlayTool
             SetStatus("Reloaded selected pages.");
         }
 
-        private void LoadBasePage()
+        private void LoadPage(DocumentPane pane)
         {
-            if (string.IsNullOrWhiteSpace(_baseFilePath))
+            if (string.IsNullOrWhiteSpace(pane.FilePath))
             {
                 return;
             }
 
-            int pageIndex = GetPageIndexFromTextBox(BasePageTextBox?.Text);
+            int pageIndex = GetPageIndexFromTextBox(pane.PageTextBox?.Text);
             SetProcessingState(true);
 
             try
             {
-                _baseOriginalImage = GetCachedPage(_baseFilePath, pageIndex);
-                ApplyBaseImageTinting(pageIndex);
-                FitToWindowDeferred();
+                pane.OriginalImage = GetCachedPage(pane.FilePath, pageIndex);
+                ApplyPaneTinting(pane, pageIndex);
+
+                if (pane == _basePane)
+                {
+                    FitToWindowDeferred();
+                }
+
                 bool useTint = TintImagesCheckBox?.IsChecked == true;
-                PrunePageCache(_baseFilePath, pageIndex);
+                PrunePageCache(pane.FilePath, pageIndex);
                 PreloadAdjacentPages(
-                    _baseFilePath,
+                    pane.FilePath,
                     pageIndex,
-                    _basePageCount,
-                    "base",
-                    Colors.LimeGreen,
+                    pane.PageCount,
+                    pane.Role,
+                    pane.TintColor,
                     useTint);
 
-                UpdatePageTextColor(BasePageTextBox!, pageIndex + 1, _basePageCount);
-                UseFilteredOverlayPickerCheckbox.IsEnabled = !string.IsNullOrWhiteSpace(_baseFilePath);
-                UpdateMemoryUsageDisplay();
+                // A successful load/navigation always shows black; red is only used to
+                // flag a *failed* page-change attempt (see TryAdvancePane).
+                pane.PageTextBox!.Foreground = Brushes.Black;
 
+                if (pane == _basePane)
+                {
+                    UseFilteredOverlayPickerCheckbox.IsEnabled = !string.IsNullOrWhiteSpace(pane.FilePath);
+                }
+
+                UpdateMemoryUsageDisplay();
             }
             catch (Exception ex)
             {
-                SetStatus($"Could not load base page: {ex.Message}");
-            }
-            finally
-            {
-                SetProcessingState(false);
-            }
-        }
-
-        private void LoadOverlayPage()
-        {
-            if (string.IsNullOrWhiteSpace(_overlayFilePath))
-            {
-                return;
-            }
-
-            int pageIndex = GetPageIndexFromTextBox(OverlayPageTextBox?.Text);
-            SetProcessingState(true);
-
-            try
-            {
-                _overlayOriginalImage = GetCachedPage(_overlayFilePath, pageIndex);
-                ApplyOverlayImageTinting(pageIndex);
-                bool useTint = TintImagesCheckBox?.IsChecked == true;
-                PrunePageCache(_overlayFilePath, pageIndex);
-                PreloadAdjacentPages(
-                    _overlayFilePath,
-                    pageIndex,
-                    _overlayPageCount,
-                    "overlay",
-                    Colors.Red,
-                    useTint);
-
-                UpdatePageTextColor(OverlayPageTextBox!, pageIndex + 1, _overlayPageCount);
-                UpdateMemoryUsageDisplay();
-
-            }
-            catch (Exception ex)
-            {
-                SetStatus($"Could not load overlay page: {ex.Message}");
+                SetStatus($"Could not load {pane.Role} page: {ex.Message}");
             }
             finally
             {
@@ -254,8 +233,54 @@ namespace PdfOverlayTool
             bool showSpinner = Interlocked.CompareExchange(ref _processingOperationCount, 0, 0) > 0;
             Dispatcher.BeginInvoke(new Action(() =>
             {
-                ProcessingSpinner.Visibility = showSpinner ? Visibility.Visible : Visibility.Collapsed;
+                if (showSpinner)
+                {
+                    ProcessingSpinner.Visibility = Visibility.Visible;
+                    StartProcessingAnimation();
+                }
+                else
+                {
+                    StopProcessingAnimation();
+                    ProcessingSpinner.Visibility = Visibility.Collapsed;
+                }
             }));
+        }
+
+        private void StartProcessingAnimation()
+        {
+            if (ProcessingSpinnerTransform == null)
+            {
+                return;
+            }
+
+            // Slide the accent segment across the (clipped) track and repeat: a classic
+            // indeterminate "still working" bar. Linear so the loop boundary is seamless.
+            var slide = new DoubleAnimation
+            {
+                From = -PROCESSING_BAR_WIDTH,
+                To = PROCESSING_BAR_TRACK_WIDTH,
+                Duration = TimeSpan.FromSeconds(1.1),
+                RepeatBehavior = RepeatBehavior.Forever
+            };
+            ProcessingSpinnerTransform.BeginAnimation(TranslateTransform.XProperty, slide);
+        }
+
+        private void StopProcessingAnimation()
+        {
+            ProcessingSpinnerTransform?.BeginAnimation(TranslateTransform.XProperty, null);
+        }
+
+        // Keep the status message short so it never crowds the centered "still working"
+        // bar: show at most the trailing PATH_STATUS_MAX_LENGTH characters of the path,
+        // prefixed with an ellipsis when trimmed.
+        private static string TrimPathForDisplay(string filePath)
+        {
+            if (string.IsNullOrEmpty(filePath) || filePath.Length <= PATH_STATUS_MAX_LENGTH)
+            {
+                return filePath;
+            }
+
+            return "..." + filePath.Substring(filePath.Length - PATH_STATUS_MAX_LENGTH);
         }
 
         private int GetPageIndexFromTextBox(string? text)
@@ -413,44 +438,33 @@ namespace PdfOverlayTool
 
         private void ApplyImageTinting()
         {
-            int basePageIndex = GetPageIndexFromTextBox(BasePageTextBox?.Text);
-            int overlayPageIndex = GetPageIndexFromTextBox(OverlayPageTextBox?.Text);
-
-            ApplyBaseImageTinting(basePageIndex);
-            ApplyOverlayImageTinting(overlayPageIndex);
-        }
-        private void ApplyBaseImageTinting(int pageIndex)
-        {
-            if (_baseOriginalImage == null || string.IsNullOrWhiteSpace(_baseFilePath))
+            // The Tint checkbox's Checked handler can fire during InitializeComponent, before the panes exist.
+            if (_basePane == null || _overlayPane == null)
+            {
                 return;
+            }
+
+            ApplyPaneTinting(_basePane, GetPageIndexFromTextBox(_basePane.PageTextBox?.Text));
+            ApplyPaneTinting(_overlayPane, GetPageIndexFromTextBox(_overlayPane.PageTextBox?.Text));
+        }
+
+        private void ApplyPaneTinting(DocumentPane pane, int pageIndex)
+        {
+            if (pane.OriginalImage == null || string.IsNullOrWhiteSpace(pane.FilePath))
+            {
+                return;
+            }
 
             bool useTint = TintImagesCheckBox?.IsChecked == true;
 
-            BaseImage.Source = useTint
+            pane.ImageControl.Source = useTint
                 ? GetCachedTintedPage(
-                    _baseFilePath,
+                    pane.FilePath,
                     pageIndex,
-                    _baseOriginalImage,
-                    "base",
-                    Colors.LimeGreen)
-                : _baseOriginalImage;
-        }
-
-        private void ApplyOverlayImageTinting(int pageIndex)
-        {
-            if (_overlayOriginalImage == null || string.IsNullOrWhiteSpace(_overlayFilePath))
-                return;
-
-            bool useTint = TintImagesCheckBox?.IsChecked == true;
-
-            OverlayImage.Source = useTint
-                ? GetCachedTintedPage(
-                    _overlayFilePath,
-                    pageIndex,
-                    _overlayOriginalImage,
-                    "overlay",
-                    Colors.Red)
-                : _overlayOriginalImage;
+                    pane.OriginalImage,
+                    pane.Role,
+                    pane.TintColor)
+                : pane.OriginalImage;
         }
 
         private BitmapSource CreateTintedImage(BitmapSource source, Color tintColor)
@@ -549,8 +563,11 @@ namespace PdfOverlayTool
         {
             if (!_isAutoMode)
             {
+                _memoryPressureActive = false;
                 _autoMemoryExceededSeconds = 0;
                 _autoMemorySevereExceededSeconds = 0;
+                _autoAdjustCooldownSeconds = 0;
+                _autoPerformanceReductionActive = false;
                 return;
             }
 
@@ -559,14 +576,26 @@ namespace PdfOverlayTool
                 return;
             }
 
-            if (cacheOverThreshold || systemOverThreshold)
+            // Live signal (read by PreloadAdjacentPages) that suppresses speculative
+            // preloading while memory is tight - that preloading is the main CPU hog.
+            _memoryPressureActive = cacheOverThreshold || systemOverThreshold;
+
+            // After an adjustment, let things settle before measuring again so reductions
+            // (and their re-renders) don't stack up faster than they can take effect.
+            if (_autoAdjustCooldownSeconds > 0)
+            {
+                _autoAdjustCooldownSeconds--;
+                return;
+            }
+
+            if (_memoryPressureActive)
             {
                 if (GetCacheRadius() > 0)
                 {
                     _autoMemorySevereExceededSeconds = 0;
                     _autoMemoryExceededSeconds++;
 
-                    if (_autoMemoryExceededSeconds >= 10)
+                    if (_autoMemoryExceededSeconds >= CACHE_REDUCE_DELAY_SECONDS)
                     {
                         ReduceCachePageSize();
                     }
@@ -576,7 +605,7 @@ namespace PdfOverlayTool
                     _autoMemoryExceededSeconds = 0;
                     _autoMemorySevereExceededSeconds++;
 
-                    if (_autoMemorySevereExceededSeconds >= 30)
+                    if (_autoMemorySevereExceededSeconds >= DPI_REDUCE_DELAY_SECONDS)
                     {
                         ReduceDpi();
                     }
@@ -586,6 +615,14 @@ namespace PdfOverlayTool
             {
                 _autoMemoryExceededSeconds = 0;
                 _autoMemorySevereExceededSeconds = 0;
+
+                // Reduction has brought memory back under the limits: clear the
+                // "performance reduced" indicator so the AUTO button returns to white.
+                if (_autoPerformanceReductionActive)
+                {
+                    _autoPerformanceReductionActive = false;
+                    UpdateAutoModeButtonAppearance();
+                }
             }
         }
 
@@ -594,6 +631,165 @@ namespace PdfOverlayTool
             cacheOverThreshold = false;
             systemOverThreshold = false;
 
+            long estimatedBytes = GetEstimatedCacheBytes();
+
+            if (TryGetTotalSystemMemoryBytes(out long totalSystemMemoryBytes) && totalSystemMemoryBytes > 0)
+            {
+                double cachePercentOfSystemMemory = estimatedBytes / (double)totalSystemMemoryBytes * 100.0;
+                cacheOverThreshold = cachePercentOfSystemMemory > CACHE_MEMORY_PERCENT_THRESHOLD;
+            }
+
+            systemOverThreshold = TryGetSystemMemoryLoadPercent(out double systemMemoryLoadPercent)
+                && systemMemoryLoadPercent > SYSTEM_MEMORY_LOAD_THRESHOLD;
+            return true;
+        }
+
+        private void ReduceCachePageSize()
+        {
+            if (CacheSizeSlider == null)
+            {
+                return;
+            }
+
+            double newCacheRadius = Math.Max(CacheSizeSlider.Minimum, CacheSizeSlider.Value - 1);
+            if (newCacheRadius == CacheSizeSlider.Value)
+            {
+                return;
+            }
+
+            // Assigning the slider value raises ValueChanged, which applies the new setting.
+            CacheSizeSlider.Value = newCacheRadius;
+            _autoPerformanceReductionActive = true;
+            UpdateAutoModeButtonAppearance();
+            SetStatus(LOW_MEMORY_MESSAGE, isError: true);
+            _autoMemoryExceededSeconds = 0;
+            _autoAdjustCooldownSeconds = AUTO_ADJUST_COOLDOWN_SECONDS;
+        }
+
+        private void ReduceDpi()
+        {
+            if (DpiSlider == null)
+            {
+                return;
+            }
+
+            double newDpi = Math.Max(MIN_AUTO_DPI, DpiSlider.Value - DPI_REDUCE_STEP);
+            if (newDpi == DpiSlider.Value)
+            {
+                return;
+            }
+
+            // Assigning the slider value raises ValueChanged, which applies the new setting.
+            DpiSlider.Value = newDpi;
+            _autoPerformanceReductionActive = true;
+            UpdateAutoModeButtonAppearance();
+            SetStatus(LOW_MEMORY_MESSAGE, isError: true);
+            _autoMemorySevereExceededSeconds = 0;
+            _autoAdjustCooldownSeconds = AUTO_ADJUST_COOLDOWN_SECONDS;
+        }
+
+        private void MemoryControl_ValueChanged(object sender, RoutedPropertyChangedEventArgs<double> e)
+        {
+            // While the thumb is being dragged, defer the (expensive) refresh until release.
+            // Discrete changes (track click, keyboard) are not drags, so they apply immediately.
+            if (_isMemorySliderDragging)
+            {
+                return;
+            }
+
+            ApplyMemorySettings(RequiresRenderInvalidation(sender));
+        }
+
+        private void MemorySlider_DragStarted(object sender, DragStartedEventArgs e)
+        {
+            _isMemorySliderDragging = true;
+        }
+
+        private void MemorySlider_DragCompleted(object sender, DragCompletedEventArgs e)
+        {
+            _isMemorySliderDragging = false;
+            ApplyMemorySettings(RequiresRenderInvalidation(sender));
+        }
+
+        // DPI and Sensitivity change the rendered pixels, so their caches must be rebuilt.
+        // The Page Cache size only affects how many pages are retained/preloaded.
+        private bool RequiresRenderInvalidation(object sender)
+        {
+            return sender == DpiSlider || sender == ImageThresholdSlider;
+        }
+
+        private void ApplyMemorySettings(bool invalidateRenders)
+        {
+            // Slider ValueChanged can fire during InitializeComponent, before the panes exist.
+            if (_basePane == null || _overlayPane == null)
+            {
+                return;
+            }
+
+            if (DpiSlider == null || ImageThresholdSlider == null || CacheSizeSlider == null)
+            {
+                return;
+            }
+
+            selectedDpi = (int)DpiSlider.Value;
+            imageThreshold = (int)ImageThresholdSlider.Value;
+            setOffset = CacheSizeSlider.Value;
+
+            // A DPI/Sensitivity change makes every cached render stale, so drop them and let
+            // the reload below re-render the current page and preload the neighbours afresh.
+            if (invalidateRenders)
+            {
+                ClearRenderCaches();
+            }
+
+            UpdateMemoryUsageDisplay();
+
+            if (!string.IsNullOrWhiteSpace(_basePane.FilePath))
+            {
+                int basePageIndex = GetPageIndexFromTextBox(_basePane.PageTextBox?.Text);
+                PrunePageCache(_basePane.FilePath, basePageIndex);
+                LoadPage(_basePane);
+            }
+
+            if (!string.IsNullOrWhiteSpace(_overlayPane.FilePath))
+            {
+                int overlayPageIndex = GetPageIndexFromTextBox(_overlayPane.PageTextBox?.Text);
+                PrunePageCache(_overlayPane.FilePath, overlayPageIndex);
+                LoadPage(_overlayPane);
+            }
+        }
+
+        private void ClearRenderCaches()
+        {
+            lock (_pageCacheLock)
+            {
+                _pageCache.Clear();
+            }
+
+            lock (_tintCacheLock)
+            {
+                _tintCache.Clear();
+            }
+        }
+
+        private void UpdateAutoModeButtonAppearance()
+        {
+            if (AutoModeToggleButton == null)
+            {
+                return;
+            }
+
+            if (!_isAutoMode || !_autoPerformanceReductionActive)
+            {
+                AutoModeToggleButton.Background = new SolidColorBrush(Color.FromRgb(255, 255, 255));
+                return;
+            }
+
+            AutoModeToggleButton.Background = new SolidColorBrush(Color.FromRgb(250, 224, 150));
+        }
+
+        private long GetEstimatedCacheBytes()
+        {
             long estimatedBytes = 0;
 
             lock (_pageCacheLock)
@@ -612,104 +808,7 @@ namespace PdfOverlayTool
                 }
             }
 
-            if (TryGetTotalSystemMemoryBytes(out long totalSystemMemoryBytes) && totalSystemMemoryBytes > 0)
-            {
-                double cachePercentOfSystemMemory = estimatedBytes / (double)totalSystemMemoryBytes * 100.0;
-                cacheOverThreshold = cachePercentOfSystemMemory > 25.0;
-            }
-
-            systemOverThreshold = TryGetSystemMemoryLoadPercent(out double systemMemoryLoadPercent) && systemMemoryLoadPercent > 90.0;
-            return true;
-        }
-
-        private void ReduceCachePageSize()
-        {
-            if (CacheSizeSlider == null)
-            {
-                return;
-            }
-
-            double newCacheRadius = Math.Max(0, CacheSizeSlider.Value - 1);
-            if (newCacheRadius == CacheSizeSlider.Value)
-            {
-                return;
-            }
-
-            CacheSizeSlider.Value = newCacheRadius;
-            _autoPerformanceReductionActive = true;
-            UpdateAutoModeButtonAppearance();
-            SetStatus("Low memory - AUTO performance reduction!");
-            ApplyMemorySettings();
-            _autoMemoryExceededSeconds = 0;
-        }
-
-        private void ReduceDpi()
-        {
-            if (DpiSlider == null)
-            {
-                return;
-            }
-
-            double newDpi = Math.Max(150, DpiSlider.Value - 25);
-            if (newDpi == DpiSlider.Value)
-            {
-                return;
-            }
-
-            DpiSlider.Value = newDpi;
-            _autoPerformanceReductionActive = true;
-            UpdateAutoModeButtonAppearance();
-            SetStatus("Low memory - AUTO performance reduction!");
-            ApplyMemorySettings();
-            _autoMemorySevereExceededSeconds = 0;
-        }
-
-        private void ApplyMemorySettings()
-        {
-            if (DpiSlider == null || ImageThresholdSlider == null || CacheSizeSlider == null)
-            {
-                return;
-            }
-
-            selectedDpi = (int)DpiSlider.Value;
-            imageThreshold = (int)ImageThresholdSlider.Value;
-            setOffset = CacheSizeSlider.Value;
-            UpdateMemoryUsageDisplay();
-
-            if (!string.IsNullOrWhiteSpace(_baseFilePath))
-            {
-                int basePageIndex = GetPageIndexFromTextBox(BasePageTextBox?.Text);
-                PrunePageCache(_baseFilePath, basePageIndex);
-                LoadBasePage();
-            }
-
-            if (!string.IsNullOrWhiteSpace(_overlayFilePath))
-            {
-                int overlayPageIndex = GetPageIndexFromTextBox(OverlayPageTextBox?.Text);
-                PrunePageCache(_overlayFilePath, overlayPageIndex);
-                LoadOverlayPage();
-            }
-        }
-
-        private void MemoryControl_ValueChanged(object sender, RoutedPropertyChangedEventArgs<double> e)
-        {
-            ApplyMemorySettings();
-        }
-
-        private void UpdateAutoModeButtonAppearance()
-        {
-            if (AutoModeToggleButton == null)
-            {
-                return;
-            }
-
-            if (!_isAutoMode || !_autoPerformanceReductionActive)
-            {
-                AutoModeToggleButton.Background = new SolidColorBrush(Color.FromRgb(244, 244, 244));
-                return;
-            }
-
-            AutoModeToggleButton.Background = Brushes.PaleGoldenrod;
+            return estimatedBytes;
         }
 
         private void UpdateMemoryUsageDisplay()
@@ -725,34 +824,15 @@ namespace PdfOverlayTool
                 return;
             }
 
-            long estimatedBytes = 0;
-            int pageCacheCount = 0;
-            int tintCacheCount = 0;
-
-            lock (_pageCacheLock)
-            {
-                pageCacheCount = _pageCache.Count;
-                foreach (BitmapSource? image in _pageCache.Values)
-                {
-                    estimatedBytes += EstimateBitmapBytes(image);
-                }
-            }
-
-            lock (_tintCacheLock)
-            {
-                tintCacheCount = _tintCache.Count;
-                foreach (BitmapSource? image in _tintCache.Values)
-                {
-                    estimatedBytes += EstimateBitmapBytes(image);
-                }
-            }
+            long estimatedBytes = GetEstimatedCacheBytes();
 
             if (TryGetTotalSystemMemoryBytes(out long totalSystemMemoryBytes) && totalSystemMemoryBytes > 0)
             {
                 double cachePercentOfSystemMemory = estimatedBytes / (double)totalSystemMemoryBytes * 100.0;
                 double systemMemoryLoadPercent = 0.0;
-                bool cacheOverThreshold = cachePercentOfSystemMemory > 25.0;
-                bool systemOverThreshold = TryGetSystemMemoryLoadPercent(out systemMemoryLoadPercent) && systemMemoryLoadPercent > 90.0;
+                bool cacheOverThreshold = cachePercentOfSystemMemory > CACHE_MEMORY_PERCENT_THRESHOLD;
+                bool systemOverThreshold = TryGetSystemMemoryLoadPercent(out systemMemoryLoadPercent)
+                    && systemMemoryLoadPercent > SYSTEM_MEMORY_LOAD_THRESHOLD;
 
                 MemoryUsageTextBlock.Inlines.Clear();
                 MemoryUsageTextBlock.Inlines.Add(new Run("Mem: "));
@@ -879,8 +959,6 @@ namespace PdfOverlayTool
         private void OverlayImage_MouseLeftButtonDown(object sender, MouseButtonEventArgs e)
         {
             // If Ctrl is held, let ScrollViewer handle panning instead
-
-
             if (Keyboard.IsKeyDown(Key.LeftCtrl) || Keyboard.IsKeyDown(Key.RightCtrl))
             {
                 return;
@@ -923,16 +1001,15 @@ namespace PdfOverlayTool
             _lastMousePosition = currentMousePosition;
         }
 
-        private void SetStatus(string message)
+        private void SetStatus(string message, bool isError = false)
         {
             if (StatusText != null)
             {
                 StatusText.Text = message;
-                StatusText.Foreground = message.Equals("Low memory - AUTO performance reduction!", StringComparison.OrdinalIgnoreCase)
-                    ? Brushes.Red
-                    : Brushes.Black;
+                StatusText.Foreground = isError ? Brushes.Red : Brushes.Black;
             }
         }
+
         private void ViewerScrollViewer_PreviewMouseWheel(object sender, MouseWheelEventArgs e)
         {
             if (!Keyboard.IsKeyDown(Key.LeftCtrl) && !Keyboard.IsKeyDown(Key.RightCtrl))
@@ -951,11 +1028,11 @@ namespace PdfOverlayTool
 
             if (e.Delta > 0)
             {
-                _zoom *= ZOOM_STEP1;
+                _zoom *= ZOOM_STEP;
             }
             else
             {
-                _zoom /= ZOOM_STEP1;
+                _zoom /= ZOOM_STEP;
             }
 
             _zoom = Math.Clamp(_zoom, ZOOM_MIN, ZOOM_MAX);
@@ -989,9 +1066,8 @@ namespace PdfOverlayTool
 
             ViewerScrollViewer.ScrollToHorizontalOffset(newHorizontalOffset);
             ViewerScrollViewer.ScrollToVerticalOffset(newVerticalOffset);
-
-
         }
+
         private void FitToWindow_Click(object sender, RoutedEventArgs e)
         {
             if (ViewerScrollViewer == null || OverlayHost == null)
@@ -1036,12 +1112,10 @@ namespace PdfOverlayTool
             // Reset scroll to top-left
             ViewerScrollViewer.ScrollToHorizontalOffset(0);
             ViewerScrollViewer.ScrollToVerticalOffset(0);
-
-
         }
+
         private void ViewerScrollViewer_MouseLeftButtonDown(object sender, MouseButtonEventArgs e)
         {
-            SetStatus("Pan start triggered");
             if (!Keyboard.IsKeyDown(Key.LeftCtrl) && !Keyboard.IsKeyDown(Key.RightCtrl))
                 return;
 
@@ -1060,6 +1134,7 @@ namespace PdfOverlayTool
 
             Cursor = Cursors.SizeAll;
         }
+
         private void ViewerScrollViewer_MouseMove(object sender, MouseEventArgs e)
         {
             if (!_isPanning)
@@ -1078,13 +1153,13 @@ namespace PdfOverlayTool
             scrollViewer.ScrollToHorizontalOffset(_panStartHorizontalOffset - deltaX);
             scrollViewer.ScrollToVerticalOffset(_panStartVerticalOffset - deltaY);
         }
+
         private void ViewerScrollViewer_MouseLeftButtonUp(object sender, MouseButtonEventArgs e)
         {
             if (!_isPanning)
                 return;
 
             e.Handled = true;
-
 
             if (sender is not ScrollViewer scrollViewer)
                 return;
@@ -1094,6 +1169,7 @@ namespace PdfOverlayTool
 
             Cursor = Cursors.Arrow;
         }
+
         private void FitToWindowDeferred()
         {
             Dispatcher.BeginInvoke(new Action(() =>
@@ -1101,68 +1177,65 @@ namespace PdfOverlayTool
                 FitToWindow_Click(this, new RoutedEventArgs());
             }), DispatcherPriority.Loaded);
         }
+
         private void NextPage_Click(object sender, RoutedEventArgs e)
         {
             ChangePages(1);
         }
+
         private void PreviousPage_Click(object sender, RoutedEventArgs e)
         {
             ChangePages(-1);
         }
+
         private void NextPageOffset_Click(object sender, RoutedEventArgs e)
         {
             ChangeOverlayPage(1);
         }
+
         private void PreviousPageOffset_Click(object sender, RoutedEventArgs e)
         {
             ChangeOverlayPage(-1);
         }
+
+        private void Window_PreviewKeyDown(object sender, KeyEventArgs e)
+        {
+            if (e.Key != Key.Left && e.Key != Key.Right)
+            {
+                return;
+            }
+
+            // Leave arrow keys alone while editing a page number or adjusting a slider,
+            // so caret movement and value stepping keep working.
+            if (Keyboard.FocusedElement is TextBox ||
+                Keyboard.FocusedElement is System.Windows.Controls.Primitives.RangeBase)
+            {
+                return;
+            }
+
+            ChangePages(e.Key == Key.Right ? 1 : -1);
+            e.Handled = true;
+        }
+
         private void ChangePages(int delta)
         {
             bool anyChanged = false;
             bool anyLimitHit = false;
 
-            // BASE PDF
-            if (!string.IsNullOrWhiteSpace(_baseFilePath))
+            foreach (DocumentPane pane in new[] { _basePane, _overlayPane })
             {
-                int basePage = GetPageNumber(BasePageTextBox.Text);
-                int newBasePage = basePage + delta;
-
-                if (newBasePage >= 1 &&
-                    (!_basePageCount.HasValue || newBasePage <= _basePageCount.Value))
+                if (string.IsNullOrWhiteSpace(pane.FilePath))
                 {
-                    BasePageTextBox.Text = newBasePage.ToString();
-                    LoadBasePage();
+                    continue;
+                }
+
+                if (TryAdvancePane(pane, delta))
+                {
                     anyChanged = true;
                 }
                 else
                 {
                     anyLimitHit = true;
-                    ShowError(delta < 0
-                        ? "Base PDF: first page reached."
-                        : "Base PDF: last page reached.");
-                }
-            }
-
-            // OVERLAY PDF
-            if (!string.IsNullOrWhiteSpace(_overlayFilePath))
-            {
-                int overlayPage = GetPageNumber(OverlayPageTextBox.Text);
-                int newOverlayPage = overlayPage + delta;
-
-                if (newOverlayPage >= 1 &&
-                    (!_overlayPageCount.HasValue || newOverlayPage <= _overlayPageCount.Value))
-                {
-                    OverlayPageTextBox.Text = newOverlayPage.ToString();
-                    LoadOverlayPage();
-                    anyChanged = true;
-                }
-                else
-                {
-                    anyLimitHit = true;
-                    ShowError(delta < 0
-                        ? "Overlay PDF: first page reached."
-                        : "Overlay PDF: last page reached.");
                 }
             }
 
@@ -1171,36 +1244,46 @@ namespace PdfOverlayTool
 
             if (anyChanged && !anyLimitHit)
             {
-                SetStatus($"Pages loaded. Base: {BasePageTextBox.Text}, Overlay: {OverlayPageTextBox.Text}");
+                SetStatus($"Pages loaded. Base: {_basePane.PageTextBox.Text}, Overlay: {_overlayPane.PageTextBox.Text}");
             }
         }
 
         private void ChangeOverlayPage(int delta)
         {
-            if (string.IsNullOrWhiteSpace(_overlayFilePath))
+            if (string.IsNullOrWhiteSpace(_overlayPane.FilePath))
                 return;
 
-            int overlayPage = GetPageNumber(OverlayPageTextBox.Text);
-            int newOverlayPage = overlayPage + delta;
-
-            if (newOverlayPage >= 1 &&
-                (!_overlayPageCount.HasValue || newOverlayPage <= _overlayPageCount.Value))
+            if (TryAdvancePane(_overlayPane, delta))
             {
-                OverlayPageTextBox.Text = newOverlayPage.ToString();
-                LoadOverlayPage();
-
-                SetStatus($"Overlay page: {OverlayPageTextBox.Text}");
-            }
-            else
-            {
-                ShowError(delta < 0
-                    ? "Overlay PDF: first page reached."
-                    : "Overlay PDF: last page reached.");
+                SetStatus($"Overlay page: {_overlayPane.PageTextBox.Text}");
             }
 
             UpdatePageNavigationButtons();
             UpdateOverlayNavigationButtons();
         }
+
+        private bool TryAdvancePane(DocumentPane pane, int delta)
+        {
+            int currentPage = GetPageNumber(pane.PageTextBox.Text);
+            int newPage = currentPage + delta;
+
+            if (newPage >= 1 &&
+                (!pane.PageCount.HasValue || newPage <= pane.PageCount.Value))
+            {
+                pane.PageTextBox.Text = newPage.ToString();
+                LoadPage(pane);
+                return true;
+            }
+
+            // Attempted to move to a non-existent page: keep the page number where it is
+            // and flag it red to show the change was rejected.
+            pane.PageTextBox.Foreground = Brushes.Red;
+            ShowError(delta < 0
+                ? $"{pane.DisplayName} PDF: first page reached."
+                : $"{pane.DisplayName} PDF: last page reached.");
+            return false;
+        }
+
         private int GetPageNumber(string text)
         {
             if (!int.TryParse(text, out int page) || page < 1)
@@ -1208,6 +1291,7 @@ namespace PdfOverlayTool
 
             return page;
         }
+
         private void PageTextBox_KeyDown(object sender, KeyEventArgs e)
         {
             if (e.Key != Key.Enter)
@@ -1216,15 +1300,22 @@ namespace PdfOverlayTool
             // Prevent beep / extra processing
             e.Handled = true;
 
-            LoadBasePage();
-            LoadOverlayPage();
+            LoadPage(_basePane);
+            LoadPage(_overlayPane);
             UpdatePageNavigationButtons();
             UpdateOverlayNavigationButtons();
 
-            SetStatus($"Loaded pages: Base={BasePageTextBox.Text}, Overlay={OverlayPageTextBox.Text}");
+            SetStatus($"Loaded pages: Base={_basePane.PageTextBox.Text}, Overlay={_overlayPane.PageTextBox.Text}");
         }
+
         private int? GetPdfPageCount(string filePath)
         {
+            string extension = Path.GetExtension(filePath).ToLowerInvariant();
+            if (extension != ".pdf")
+            {
+                return 1;
+            }
+
             try
             {
                 string pdfBytes = GetPdfBase64(filePath);
@@ -1235,88 +1326,74 @@ namespace PdfOverlayTool
                 return null;
             }
         }
+
         private void ShowError(string message)
         {
-            StatusText.Text = message;
-            StatusText.Foreground = Brushes.Red;
+            SetStatus(message, isError: true);
         }
+
         private void UpdatePageNavigationButtons()
         {
             bool canGoPrevious = false;
             bool canGoNext = false;
 
-            // BASE
-            if (!string.IsNullOrWhiteSpace(_baseFilePath))
+            foreach (DocumentPane pane in new[] { _basePane, _overlayPane })
             {
-                int basePage = GetPageNumber(BasePageTextBox.Text);
+                if (string.IsNullOrWhiteSpace(pane.FilePath))
+                {
+                    continue;
+                }
 
-                if (basePage > 1)
+                int page = GetPageNumber(pane.PageTextBox.Text);
+
+                if (page > 1)
                     canGoPrevious = true;
 
-                if (!_basePageCount.HasValue || basePage < _basePageCount.Value)
-                    canGoNext = true;
-            }
-
-            // OVERLAY
-            if (!string.IsNullOrWhiteSpace(_overlayFilePath))
-            {
-                int overlayPage = GetPageNumber(OverlayPageTextBox.Text);
-
-                if (overlayPage > 1)
-                    canGoPrevious = true;
-
-                if (!_overlayPageCount.HasValue || overlayPage < _overlayPageCount.Value)
+                if (!pane.PageCount.HasValue || page < pane.PageCount.Value)
                     canGoNext = true;
             }
 
             PreviousPageButton.IsEnabled = canGoPrevious;
             NextPageButton.IsEnabled = canGoNext;
-
-
-
         }
 
         private void UpdateOverlayNavigationButtons()
         {
             // No overlay loaded
-            if (string.IsNullOrWhiteSpace(_overlayFilePath))
+            if (string.IsNullOrWhiteSpace(_overlayPane.FilePath))
             {
                 PreviousPageOffsetButton.IsEnabled = false;
                 NextPageOffsetButton.IsEnabled = false;
                 return;
             }
 
-            int currentPage = GetPageNumber(OverlayPageTextBox.Text);
+            int currentPage = GetPageNumber(_overlayPane.PageTextBox.Text);
 
             bool canGoPrev = currentPage > 1;
-            bool canGoNext = !_overlayPageCount.HasValue || currentPage < _overlayPageCount.Value;
+            bool canGoNext = !_overlayPane.PageCount.HasValue || currentPage < _overlayPane.PageCount.Value;
 
             PreviousPageOffsetButton.IsEnabled = canGoPrev;
             NextPageOffsetButton.IsEnabled = canGoNext;
-
         }
+
         private void UpdatePageInputState()
         {
-            if (string.IsNullOrWhiteSpace(_baseFilePath))
-            {
-                BasePageTextBox.Text = "";
-            }
-            else
-            {
-                if (string.IsNullOrWhiteSpace(BasePageTextBox.Text))
-                    BasePageTextBox.Text = "1";
-            }
+            SyncPageTextBox(_basePane);
+            SyncPageTextBox(_overlayPane);
+        }
 
-            if (string.IsNullOrWhiteSpace(_overlayFilePath))
+        private void SyncPageTextBox(DocumentPane pane)
+        {
+            if (string.IsNullOrWhiteSpace(pane.FilePath))
             {
-                OverlayPageTextBox.Text = "";
+                pane.PageTextBox.Text = "";
             }
-            else
+            else if (string.IsNullOrWhiteSpace(pane.PageTextBox.Text))
             {
-                if (string.IsNullOrWhiteSpace(OverlayPageTextBox.Text))
-                    OverlayPageTextBox.Text = "1";
+                pane.PageTextBox.Text = "1";
             }
         }
+
         private BitmapSource GetCachedPage(string filePath, int pageIndex)
         {
             var key = (filePath, pageIndex);
@@ -1329,17 +1406,18 @@ namespace PdfOverlayTool
                 }
             }
 
-            BitmapSource image = RenderPdfPageToBitmapSource(filePath, pageIndex);
+            BitmapSource image = LoadFileAsBitmapSource(filePath, pageIndex);
 
             lock (_pageCacheLock)
             {
                 if (!_pageCache.ContainsKey(key))
                 {
                     _pageCache[key] = image;
-                    UpdateMemoryUsageDisplay();
                 }
 
-                return _pageCache[key];
+                BitmapSource result = _pageCache[key];
+                UpdateMemoryUsageDisplay();
+                return result;
             }
         }
 
@@ -1367,12 +1445,14 @@ namespace PdfOverlayTool
                 if (!_tintCache.ContainsKey(key))
                 {
                     _tintCache[key] = tinted;
-                    UpdateMemoryUsageDisplay();
                 }
 
-                return _tintCache[key];
+                BitmapSource result = _tintCache[key];
+                UpdateMemoryUsageDisplay();
+                return result;
             }
         }
+
         private int GetCacheRadius()
         {
             return Math.Max(0, (int)Math.Round(setOffset));
@@ -1401,14 +1481,22 @@ namespace PdfOverlayTool
                 return _pdfCache[filePath];
             }
         }
+
         private void PreloadAdjacentPages(
-    string filePath,
-    int currentPageIndex,
-    int? pageCount,
-    string role,
-    Color tintColor,
-    bool useTint)
+            string filePath,
+            int currentPageIndex,
+            int? pageCount,
+            string role,
+            Color tintColor,
+            bool useTint)
         {
+            // Under AUTO memory pressure, skip speculative preloading entirely. It is the
+            // main source of re-render churn that fights the UI for CPU; pages still render
+            // on demand when the user actually navigates to them.
+            if (_isAutoMode && _memoryPressureActive)
+            {
+                return;
+            }
 
             SetProcessingState(true);
 
@@ -1456,15 +1544,6 @@ namespace PdfOverlayTool
             });
         }
 
-        private bool IsPageCached(string filePath, int pageIndex)
-        {
-            var key = (filePath, pageIndex);
-
-            lock (_pageCacheLock)
-            {
-                return _pageCache.ContainsKey(key);
-            }
-        }
         private void PrunePageCache(string filePath, int currentPageIndex)
         {
             int cacheRadius = GetCacheRadius();
@@ -1483,8 +1562,6 @@ namespace PdfOverlayTool
                 }
             }
 
-            UpdateMemoryUsageDisplay();
-
             // Also prune tint cache
             lock (_tintCacheLock)
             {
@@ -1502,84 +1579,67 @@ namespace PdfOverlayTool
 
             UpdateMemoryUsageDisplay();
         }
-        private void UpdatePageTextColor(TextBox textBox, int currentPage, int? pageCount)
-        {
-            bool isAtLowerLimit = currentPage <= 1;
-            bool isAtUpperLimit = pageCount.HasValue && currentPage >= pageCount.Value;
 
-            if (isAtLowerLimit || isAtUpperLimit)
-            {
-                textBox.Foreground = Brushes.Red;
-            }
-            else
-            {
-                textBox.Foreground = Brushes.Black;
-            }
-        }
         private string? GetBasePrefix()
         {
-            if (string.IsNullOrWhiteSpace(_baseFilePath))
+            if (string.IsNullOrWhiteSpace(_basePane.FilePath))
                 return null;
 
-            string name = Path.GetFileNameWithoutExtension(_baseFilePath);
+            string name = Path.GetFileNameWithoutExtension(_basePane.FilePath);
             int idx = name.IndexOf('_');
 
             return idx > 0 ? name.Substring(0, idx) : name;
         }
+
         private string? SelectOverlayFileFiltered()
         {
-            if (string.IsNullOrWhiteSpace(_baseFilePath))
+            if (string.IsNullOrWhiteSpace(_basePane.FilePath))
                 return SelectPdfOrImageFile(); // fallback
 
-            string baseDirectory = Path.GetDirectoryName(_baseFilePath)!;
+            string baseDirectory = Path.GetDirectoryName(_basePane.FilePath)!;
             string? basePrefix = GetBasePrefix();
 
             if (string.IsNullOrWhiteSpace(basePrefix))
                 return SelectPdfOrImageFile();
 
-            string baseFileName = Path.GetFileNameWithoutExtension(_baseFilePath);
+            string baseFileName = Path.GetFileNameWithoutExtension(_basePane.FilePath);
 
-            // ✅ Get matching files
             var matchingFiles = Directory.GetFiles(baseDirectory, "*.pdf")
-    .Where(f =>
-    {
-        string name = Path.GetFileNameWithoutExtension(f);
+                .Where(f =>
+                {
+                    string name = Path.GetFileNameWithoutExtension(f);
 
-        return name.StartsWith(basePrefix, StringComparison.OrdinalIgnoreCase)
-            && !name.Equals(baseFileName, StringComparison.OrdinalIgnoreCase); // ✅ EXCLUDE BASE FILE
-    })
-    .Select(f => new FileItem
-    {
-        FullPath = f,
-        DisplayName = Path.GetFileName(f)
-    })
-    .OrderBy(f => f.DisplayName)
-    .ToList();
+                    return name.StartsWith(basePrefix, StringComparison.OrdinalIgnoreCase)
+                        && !name.Equals(baseFileName, StringComparison.OrdinalIgnoreCase); // exclude the base file
+                })
+                .Select(f => new FileItem
+                {
+                    FullPath = f,
+                    DisplayName = Path.GetFileName(f)
+                })
+                .OrderBy(f => f.DisplayName)
+                .ToList();
 
             if (matchingFiles.Count == 0)
             {
                 MessageBox.Show($"No matching overlay files found for prefix '{basePrefix}_'.");
                 return null;
             }
-            var listBox = new ListBox
+
+            // Let the user pick from the filtered list
+            var list = new ListBox
             {
                 ItemsSource = matchingFiles,
                 Margin = new Thickness(10)
             };
-            // ✅ Let user pick from filtered list
+
             var dialog = new Window
             {
-                Title = $"Double-click to select revision",
+                Title = "Double-click to select revision",
                 Width = 500,
                 Height = 400,
-                Content = new ListBox
-                {
-                    ItemsSource = matchingFiles,
-                    Margin = new Thickness(10)
-                }
+                Content = list
             };
-
-            ListBox list = (ListBox)dialog.Content;
 
             list.MouseDoubleClick += (s, e) => dialog.DialogResult = true;
 
@@ -1589,11 +1649,11 @@ namespace PdfOverlayTool
                 {
                     return selected.FullPath;
                 }
-
             }
 
             return null;
         }
+
         private class FileItem
         {
             public string FullPath { get; set; } = "";
@@ -1604,6 +1664,7 @@ namespace PdfOverlayTool
                 return DisplayName;
             }
         }
+
         private void ClearCachesForFile(string? filePath)
         {
             if (string.IsNullOrWhiteSpace(filePath))
@@ -1637,6 +1698,43 @@ namespace PdfOverlayTool
             {
                 _pdfCache.Remove(filePath);
             }
+        }
+
+        /// <summary>
+        /// Holds the state and UI references for one document (base or overlay),
+        /// so the load / tint / navigation logic can be shared between both.
+        /// </summary>
+        private sealed class DocumentPane
+        {
+            public DocumentPane(
+                string role,
+                string displayName,
+                Color tintColor,
+                Image imageControl,
+                TextBox pageTextBox,
+                Run pageCountRun,
+                TextBlock fileNameTextBlock)
+            {
+                Role = role;
+                DisplayName = displayName;
+                TintColor = tintColor;
+                ImageControl = imageControl;
+                PageTextBox = pageTextBox;
+                PageCountRun = pageCountRun;
+                FileNameTextBlock = fileNameTextBlock;
+            }
+
+            public string Role { get; }
+            public string DisplayName { get; }
+            public Color TintColor { get; }
+            public Image ImageControl { get; }
+            public TextBox PageTextBox { get; }
+            public Run PageCountRun { get; }
+            public TextBlock FileNameTextBlock { get; }
+
+            public string? FilePath { get; set; }
+            public int? PageCount { get; set; }
+            public BitmapSource? OriginalImage { get; set; }
         }
     }
 }
