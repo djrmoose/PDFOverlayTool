@@ -11,16 +11,27 @@
         ToolTipService.ShowOnDisabled="True">
 
         <Window.Resources>
-                <!-- Shared accent palette (buttons + sliders) -->
-                <Color x:Key="AccentColor">#4A90E2</Color>
-                <SolidColorBrush x:Key="AccentBrush" Color="#4A90E2"/>
-                <SolidColorBrush x:Key="AccentPressedBrush" Color="#3E7BC4"/>
-                <SolidColorBrush x:Key="ControlBackgroundBrush" Color="#FFFFFF"/>
-                <SolidColorBrush x:Key="ControlBorderBrush" Color="#D5D8DD"/>
-                <SolidColorBrush x:Key="ControlHoverBrush" Color="#EEF4FC"/>
-                <SolidColorBrush x:Key="ControlPressedBrush" Color="#D9E7F8"/>
-                <SolidColorBrush x:Key="TrackBrush" Color="#D8DBE0"/>
-                <SolidColorBrush x:Key="TextBrush" Color="#2A2A2A"/>
+                <!-- Warm brown control palette -->
+                <Color x:Key="AccentColor">#7A5230</Color>
+                <SolidColorBrush x:Key="AccentBrush" Color="#7A5230"/>
+                <SolidColorBrush x:Key="AccentPressedBrush" Color="#5C3D24"/>
+                <SolidColorBrush x:Key="ControlBackgroundBrush" Color="#FDF9F4"/>
+                <SolidColorBrush x:Key="ControlBorderBrush" Color="#C9B08A"/>
+                <SolidColorBrush x:Key="ControlHoverBrush" Color="#F2E8DA"/>
+                <SolidColorBrush x:Key="ControlPressedBrush" Color="#E3D3BF"/>
+                <SolidColorBrush x:Key="TrackBrush" Color="#D6C6B3"/>
+                <SolidColorBrush x:Key="TickBrush" Color="#A89278"/>
+                <SolidColorBrush x:Key="TextBrush" Color="#3A2E24"/>
+                <SolidColorBrush x:Key="ToolbarBackgroundBrush" Color="#F0F0F0"/>
+                <SolidColorBrush x:Key="ToolbarSecondaryBackgroundBrush" Color="#FAFAFA"/>
+                <SolidColorBrush x:Key="PanelBorderBrush" Color="#CCCCCC"/>
+                <SolidColorBrush x:Key="ViewerBackgroundBrush" Color="#2B2B2B"/>
+                <SolidColorBrush x:Key="ProcessingTrackBrush" Color="#D8D8D8"/>
+                <SolidColorBrush x:Key="AutoNormalBrush" Color="#FDF9F4"/>
+                <SolidColorBrush x:Key="AutoReducedBrush" Color="#E8C98A"/>
+                <SolidColorBrush x:Key="AutoRecoveryBrush" Color="#A8D5A2"/>
+                <SolidColorBrush x:Key="BaseFileBrush" Color="LimeGreen"/>
+                <SolidColorBrush x:Key="OverlayFileBrush" Color="Red"/>
 
                 <Style TargetType="Button">
                         <Setter Property="Background" Value="{StaticResource ControlBackgroundBrush}"/>
@@ -74,7 +85,7 @@
                                         <ControlTemplate TargetType="Thumb">
                                                 <Grid>
                                                         <Ellipse x:Name="ThumbEllipse"
-                                                                 Fill="White"
+                                                                 Fill="{StaticResource ControlBackgroundBrush}"
                                                                  Stroke="{StaticResource AccentBrush}"
                                                                  StrokeThickness="2"/>
                                                 </Grid>
@@ -112,7 +123,7 @@
 
                                                         <TickBar x:Name="TopTick"
                                                                  Grid.Row="0"
-                                                                 Fill="#B8BCC4"
+                                                                 Fill="{StaticResource TickBrush}"
                                                                  Placement="Top"
                                                                  Height="4"
                                                                  Visibility="Collapsed"/>
@@ -157,7 +168,7 @@
 
                                                         <TickBar x:Name="BottomTick"
                                                                  Grid.Row="2"
-                                                                 Fill="#B8BCC4"
+                                                                 Fill="{StaticResource TickBrush}"
                                                                  Placement="Bottom"
                                                                  Height="4"
                                                                  Visibility="Collapsed"/>
@@ -195,10 +206,10 @@
                         <Setter Property="MaxWidth" Value="480"/>
                         <Setter Property="Padding" Value="0"/>
                         <Setter Property="FontSize" Value="12"/>
-                        <Setter Property="Background" Value="#FFFFFF"/>
-                        <Setter Property="BorderBrush" Value="#D5D8DD"/>
+                        <Setter Property="Background" Value="{StaticResource ControlBackgroundBrush}"/>
+                        <Setter Property="BorderBrush" Value="{StaticResource ControlBorderBrush}"/>
                         <Setter Property="BorderThickness" Value="1"/>
-                        <Setter Property="Foreground" Value="#333333"/>
+                        <Setter Property="Foreground" Value="{StaticResource TextBrush}"/>
                         <Setter Property="HasDropShadow" Value="True"/>
                         <Setter Property="Template">
                                 <Setter.Value>
@@ -232,8 +243,17 @@
                         <Setter Property="Foreground" Value="{StaticResource AccentBrush}"/>
                 </Style>
 
+                <Style x:Key="SettingsButtonStyle"
+                       TargetType="Button"
+                       BasedOn="{StaticResource HelpButtonStyle}">
+                        <Setter Property="FontFamily" Value="Segoe MDL2 Assets"/>
+                        <Setter Property="FontSize" Value="15"/>
+                        <Setter Property="Content" Value="&#xE713;"/>
+                </Style>
+
                 <Style TargetType="CheckBox">
                         <Setter Property="ToolTipService.ShowOnDisabled" Value="True"/>
+                        <Setter Property="Foreground" Value="{StaticResource TextBrush}"/>
                 </Style>
 
                 <Style TargetType="Slider">
@@ -242,6 +262,9 @@
 
                 <Style TargetType="TextBox">
                         <Setter Property="ToolTipService.ShowOnDisabled" Value="True"/>
+                        <Setter Property="Background" Value="{StaticResource ControlBackgroundBrush}"/>
+                        <Setter Property="BorderBrush" Value="{StaticResource ControlBorderBrush}"/>
+                        <Setter Property="Foreground" Value="{StaticResource TextBrush}"/>
                 </Style>
 
                 <Style TargetType="TextBlock">
@@ -270,9 +293,9 @@
 
                 <!-- Main toolbar -->
                 <Border Grid.Row="0"
-                        Background="#F0F0F0"
+                        Background="{StaticResource ToolbarBackgroundBrush}"
                         Padding="10"
-                        BorderBrush="#CCCCCC"
+                        BorderBrush="{StaticResource PanelBorderBrush}"
                         BorderThickness="0,0,0,1">
 
                         <Grid>
@@ -296,7 +319,8 @@
                                         <ColumnDefinition Width="Auto"/>
                                 </Grid.ColumnDefinitions>
 
-                                <Button Grid.Column="0"
+                                <Button x:Name="LoadBaseButton"
+                                        Grid.Column="0"
                                         Content="Load Base"
                                         Width="110"
                                         Margin="0,0,12,0"
@@ -341,7 +365,7 @@
                                                 <Canvas Width="12"
                                                         Height="16">
                                                         <Path Data="M 9 4.5 L 3 8 L 9 11.5"
-                                                              Stroke="Black"
+                                                              Stroke="{StaticResource TextBrush}"
                                                               StrokeThickness="2"
                                                               StrokeStartLineCap="Round"
                                                               StrokeEndLineCap="Round"
@@ -367,7 +391,7 @@
                                                 <Canvas Width="12"
                                                         Height="16">
                                                         <Path Data="M 3 4.5 L 9 8 L 3 11.5"
-                                                              Stroke="Black"
+                                                              Stroke="{StaticResource TextBrush}"
                                                               StrokeThickness="2"
                                                               StrokeStartLineCap="Round"
                                                               StrokeEndLineCap="Round"
@@ -420,7 +444,7 @@
                                         <TextBlock Text="{Binding ElementName=DpiSlider, Path=Value, StringFormat={}{0:0}}"
                                                    VerticalAlignment="Center"
                                                    Margin="8,0,0,0"
-                                                   Foreground="#222222"/>
+                                                   Foreground="{StaticResource TextBrush}"/>
                                 </StackPanel>
 
                                 <TextBlock x:Name="PageCacheLabel"
@@ -454,7 +478,7 @@
                                         <TextBlock Text="{Binding ElementName=CacheSizeSlider, Path=Value, StringFormat={}{0:0}}"
                                                    VerticalAlignment="Center"
                                                    Margin="8,0,0,0"
-                                                   Foreground="#222222"/>
+                                                   Foreground="{StaticResource TextBrush}"/>
                                 </StackPanel>
                                         
                                 <TextBlock x:Name="SensitivityLabel"
@@ -488,7 +512,7 @@
                                         <TextBlock Text="{Binding ElementName=ImageThresholdSlider, Path=Value, StringFormat={}{0:0}}"
                                                    VerticalAlignment="Center"
                                                    Margin="8,0,0,0"
-                                                   Foreground="#222222"/>
+                                                   Foreground="{StaticResource TextBrush}"/>
                                 </StackPanel>
 
                                 <CheckBox Grid.Column="14"
@@ -514,7 +538,7 @@
                                         <Button x:Name="AutoModeToggleButton"
                                                 Content="AUTO"
                                                 Width="92"
-                                                ToolTip="AUTO manages memory automatically. MANUAL exposes DPI, page cache, sensitivity, and tint controls."
+                                                ToolTip="AUTO manages memory automatically. Amber = reducing quality under pressure; green = slowly restoring DPI/cache toward defaults when memory has headroom. MANUAL exposes the sliders directly."
                                                 Click="AutoModeToggleButton_Click"/>
                                 </StackPanel>
 
@@ -522,7 +546,7 @@
                 </Border>
                 <!-- Alignment controls -->
                 <Border Grid.Row="1"
-                        Background="#FAFAFA"
+                        Background="{StaticResource ToolbarSecondaryBackgroundBrush}"
                         Padding="10"
                         BorderBrush="#DDDDDD"
                         BorderThickness="0,0,0,1">
@@ -548,7 +572,8 @@
 
                                 </Grid.ColumnDefinitions>
 
-                                <Button Grid.Column="0"
+                                <Button x:Name="LoadOverlayButton"
+                                        Grid.Column="0"
                                         Content="Load Overlay"
                                         Width="110"
                                         Margin="0,0,12,0"
@@ -593,7 +618,7 @@
                                                 <Canvas Width="12"
                                                         Height="16">
                                                         <Path Data="M 9 4.5 L 3 8 L 9 11.5"
-                                                              Stroke="Black"
+                                                              Stroke="{StaticResource TextBrush}"
                                                               StrokeThickness="2"
                                                               StrokeStartLineCap="Round"
                                                               StrokeEndLineCap="Round"
@@ -619,7 +644,7 @@
                                                 <Canvas Width="12"
                                                         Height="16">
                                                         <Path Data="M 3 4.5 L 9 8 L 3 11.5"
-                                                              Stroke="Black"
+                                                              Stroke="{StaticResource TextBrush}"
                                                               StrokeThickness="2"
                                                               StrokeStartLineCap="Round"
                                                               StrokeEndLineCap="Round"
@@ -711,7 +736,7 @@
                                                    VerticalAlignment="Center"
                                                    MinWidth="32"
                                                    Margin="4,0,0,0"
-                                                   Foreground="#222222"/>
+                                                   Foreground="{StaticResource TextBrush}"/>
                                 </StackPanel>
 
                                 <Button Grid.Column="11"
@@ -723,19 +748,27 @@
 
                                 <CheckBox Grid.Column="12"
                                           x:Name="UseFilteredOverlayPickerCheckbox"
-                                          Content="Overlay Only Revisions"
+                                          Content="Revs Only"
                                           IsChecked="False"
-                                          Margin="0,0,12,0"
+                                          Margin="0,0,8,0"
                                           VerticalAlignment="Center"
                                           ToolTip="When loading overlay, only list files that share the base file's name prefix."
                                           Checked="UseFilteredOverlayPickerCheckbox_Changed"
                                           Unchecked="UseFilteredOverlayPickerCheckbox_Changed"/>
 
+                                <Button x:Name="SettingsButton"
+                                        Grid.Column="13"
+                                        Style="{StaticResource SettingsButtonStyle}"
+                                        Margin="0,0,12,0"
+                                        VerticalAlignment="Center"
+                                        ToolTip="Open settings (color palette, reset preferences)."
+                                        Click="SettingsButton_Click"/>
+
                                 <TextBlock x:Name="MemoryUsageTextBlock"
                                            Grid.Column="15"
                                            VerticalAlignment="Center"
                                            Margin="0,0,2,0"
-                                           Foreground="#222222"
+                                           Foreground="{StaticResource TextBrush}"
                                            Text="Mem: 0.0 MB"
                                            ToolTip="Cache memory as % of system RAM / overall system memory load. Red values indicate high usage."/>
 
@@ -775,10 +808,9 @@
                 <!-- Viewer area -->
                 <Border x:Name="ViewerBorder"
                         Grid.Row="2"
-                        Background="#2B2B2B"
+                        Background="{StaticResource ViewerBackgroundBrush}"
                         Padding="10"
                         AllowDrop="True"
-                        ToolTip="Drop a PDF or image here: left half loads base, right half loads overlay. Ctrl + mouse wheel zooms; Ctrl + drag pans."
                         DragOver="Viewer_DragOver"
                         Drop="Viewer_Drop">
 
@@ -818,6 +850,7 @@
                                                VerticalAlignment="Top"
                                                Opacity="0.5"
                                                Cursor="Hand"
+                                               ToolTipService.IsEnabled="False"
                                                MouseLeftButtonDown="OverlayImage_MouseLeftButtonDown"
                                                MouseLeftButtonUp="OverlayImage_MouseLeftButtonUp"
                                                MouseMove="OverlayImage_MouseMove">
@@ -846,9 +879,9 @@
 
                 <!-- Status bar -->
                 <Border Grid.Row="3"
-                        Background="#F0F0F0"
+                        Background="{StaticResource ToolbarBackgroundBrush}"
                         Padding="8"
-                        BorderBrush="#CCCCCC"
+                        BorderBrush="{StaticResource PanelBorderBrush}"
                         BorderThickness="0,1,0,0">
 
                         <Grid>
@@ -873,12 +906,12 @@
                                       VerticalAlignment="Center"
                                       Visibility="Collapsed"
                                       ClipToBounds="True">
-                                        <Border Background="#D8D8D8"
+                                        <Border Background="{StaticResource ProcessingTrackBrush}"
                                                 CornerRadius="3"/>
                                         <Border Width="70"
                                                 Height="6"
                                                 HorizontalAlignment="Left"
-                                                Background="#4A90E2"
+                                                Background="{StaticResource AccentBrush}"
                                                 CornerRadius="3">
                                                 <Border.RenderTransform>
                                                         <TranslateTransform x:Name="ProcessingSpinnerTransform"
@@ -893,13 +926,13 @@
                                            x:Name="BaseFileName"
                                            Text="No Base File Loaded"
                                            FontSize="13"
-                                           Foreground="LimeGreen"
+                                           Foreground="{StaticResource BaseFileBrush}"
                                            Margin="20,0,0,0"/>
                                 <TextBlock Grid.Column="4"
                                            x:Name="OverlayFileName"
                                            Text="No Overlay File Loaded"
                                            FontSize="13"
-                                           Foreground="Red"
+                                           Foreground="{StaticResource OverlayFileBrush}"
                                            Margin="20,0,20,0"/>
                         </Grid>
                 </Border>

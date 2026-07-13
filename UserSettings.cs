@@ -13,6 +13,31 @@ namespace PdfOverlayTool
         public double PageCache { get; set; } = 5;
         public double Sensitivity { get; set; } = 200;
         public bool OverlayOnlyRevisions { get; set; }
+        public bool IsAutoMode { get; set; } = true;
+        public bool ColorBlindFriendly { get; set; }
+        public int LastWeeklyReminderWeekKey { get; set; }
+
+        /// <summary>Default values for user preferences (excludes registration and install identity).</summary>
+        public static UserSettings CreatePreferenceDefaults()
+        {
+            return new UserSettings
+            {
+                Opacity = 50,
+                Dpi = 250,
+                PageCache = 5,
+                Sensitivity = 200,
+                OverlayOnlyRevisions = false,
+                IsAutoMode = true,
+                ColorBlindFriendly = false
+            };
+        }
+        public bool RegistrationComplete { get; set; }
+        public string UserName { get; set; } = "";
+        public string UserEmail { get; set; } = "";
+        public string InstallId { get; set; } = "";
+        public bool TermsAccepted { get; set; }
+        public string TermsVersion { get; set; } = "";
+        public string TermsAcceptedUtc { get; set; } = "";
 
         private static string SettingsDirectory =>
             Path.Combine(

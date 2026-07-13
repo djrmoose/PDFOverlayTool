@@ -25,6 +25,7 @@ artifacts/
 # MSBuild / build engine
 *.binlog
 *.tlog
+*_wpftmp.csproj
 msbuild.log
 msbuild.err
 msbuild.wrn

@@ -48,13 +48,21 @@ namespace PdfOverlayTool
         // Auto memory-management thresholds / timings
         private const double CACHE_MEMORY_PERCENT_THRESHOLD = 25.0;
         private const double SYSTEM_MEMORY_LOAD_THRESHOLD = 90.0;
-        private const int CACHE_REDUCE_DELAY_SECONDS = 10;
-        private const int DPI_REDUCE_DELAY_SECONDS = 30;
-        private const int AUTO_ADJUST_COOLDOWN_SECONDS = 5;
+        // Hysteresis band: recovery only starts well below the reduction thresholds.
+        private const double CACHE_RECOVERY_PERCENT_THRESHOLD = 15.0;
+        private const double SYSTEM_RECOVERY_LOAD_THRESHOLD = 80.0;
+        private const int CACHE_ADJUST_DELAY_SECONDS = 2;
+        private const int DPI_ADJUST_DELAY_SECONDS = 6;
+        private const int AUTO_ADJUST_COOLDOWN_SECONDS = 2;
         private const double DPI_REDUCE_STEP = 25;
+        private const double DPI_INCREASE_STEP = 25;
         private const double MIN_AUTO_DPI = 150;
+        private const double DEFAULT_AUTO_DPI = 250;
+        private const double MIN_AUTO_RECOVERY_PAGE_CACHE = 1;
+        private const double DEFAULT_AUTO_PAGE_CACHE = 5;
 
         private const string LOW_MEMORY_MESSAGE = "Low memory - AUTO performance reduction!";
+        private const string RECOVERY_MESSAGE = "AUTO restoring quality - memory headroom available.";
 
         // Indeterminate processing bar geometry (must match MainWindow.xaml).
         private const double PROCESSING_BAR_WIDTH = 70;
@@ -94,7 +102,10 @@ namespace PdfOverlayTool
         private DispatcherTimer? _autoMemoryAdjustmentTimer;
         private int _autoMemoryExceededSeconds;
         private int _autoMemorySevereExceededSeconds;
+        private int _autoMemoryRecoverySeconds;
+        private int _autoMemoryRecoveryDpiSeconds;
         private bool _autoPerformanceReductionActive;
+        private bool _autoPerformanceRecoveryActive;
         private bool _memoryPressureActive;
         private int _autoAdjustCooldownSeconds;
 
@@ -103,6 +114,20 @@ namespace PdfOverlayTool
 
         private bool _isRestoringSettings;
         private bool _settingsReady;
+        private int _lastWeeklyReminderWeekKey;
+        private bool _registrationComplete;
+        private string _userName = "";
+        private string _userEmail = "";
+        private string _installId = "";
+        private bool _installIdNeedsSave;
+        private bool _termsAccepted;
+        private string _termsVersion = "";
+        private string _termsAcceptedUtc = "";
+        private DateTime _sessionStartUtc;
+
+        private readonly SessionTelemetry _sessionTelemetry = new();
+
+        private bool _colorBlindFriendly;
 
         private DocumentPane _basePane = null!;
         private DocumentPane _overlayPane = null!;
@@ -111,27 +136,268 @@ namespace PdfOverlayTool
         {
             InitializeComponent();
 
-            _basePane = new DocumentPane("base", "Base", Colors.LimeGreen, BaseImage, BasePageTextBox, BasePageCount, BaseFileName);
-            _overlayPane = new DocumentPane("overlay", "Overlay", Colors.Red, OverlayImage, OverlayPageTextBox, OverlayPageCount, OverlayFileName);
+            _basePane = new DocumentPane("base", "Base", ColorPalette.GetBaseTintColor(false), BaseImage, BasePageTextBox, BasePageCount, BaseFileName);
+            _overlayPane = new DocumentPane("overlay", "Overlay", ColorPalette.GetOverlayTintColor(false), OverlayImage, OverlayPageTextBox, OverlayPageCount, OverlayFileName);
 
             RestoreUserSettings();
             _settingsReady = true;
 
+            if (_installIdNeedsSave)
+            {
+                SaveUserSettings();
+            }
+
             UseFilteredOverlayPickerCheckbox.IsEnabled = false;
             InitializeAutoMemoryAdjustmentTimer();
 
-            Closing += (_, _) => SaveUserSettings();
+            Closing += (_, _) =>
+            {
+                SaveUserSettings();
+                SendSessionTelemetryIfNeeded();
+            };
 
             Loaded += (s, e) =>
             {
+                ShowRegistrationIfNeeded();
+                ShowBetaSplashIfNeeded();
+                ApplyBetaFileLoadingMode();
                 UpdatePageInputState();
                 UpdatePageNavigationButtons();
                 UpdateOverlayNavigationButtons();
                 ApplyOverlaySettings();
                 UpdateMemoryUsageDisplay();
                 SetAutoManualMode(_isAutoMode);
-                SetStatus("Load a base PDF and/or overlay PDF to begin.");
+
+                if (BetaConfig.IsFileLoadingDisabled)
+                {
+                    LoadDemoFiles();
+                }
+                else
+                {
+                    SetStatus("Load a base PDF and/or overlay PDF to begin.");
+                }
+
+                RecordSessionStart();
             };
+        }
+
+        private void ShowRegistrationIfNeeded()
+        {
+            if (_registrationComplete && _termsAccepted && _termsVersion == BetaTerms.Version)
+            {
+                return;
+            }
+
+            var registration = new RegistrationWindow
+            {
+                Owner = this
+            };
+
+            if (registration.ShowDialog() != true)
+            {
+                return;
+            }
+
+            _registrationComplete = true;
+            _userName = registration.UserName;
+            _userEmail = registration.UserEmail;
+            _termsAccepted = registration.TermsAccepted;
+            _termsVersion = registration.TermsVersion;
+            _termsAcceptedUtc = registration.TermsAcceptedUtc.ToString("o");
+            SaveUserSettings();
+
+            GoogleSheetTelemetry.SendRegistration(
+                _installId,
+                _userName,
+                _userEmail,
+                _termsAccepted,
+                _termsVersion,
+                registration.TermsAcceptedUtc);
+        }
+
+        private void RecordSessionStart()
+        {
+            if (!_registrationComplete)
+            {
+                return;
+            }
+
+            _sessionStartUtc = DateTime.UtcNow;
+            _sessionTelemetry.Reset();
+            TelemetryContext.BeginSession(_sessionStartUtc);
+            TelemetryContext.RegisterSessionReporting(
+                () => _sessionTelemetry.CreateCloseSnapshot(BuildSessionSettingsSnapshot()),
+                () => _isAutoMode);
+        }
+
+        private void SendSessionTelemetryIfNeeded()
+        {
+            if (!_registrationComplete || _sessionStartUtc == default || TelemetryContext.CrashReported)
+            {
+                return;
+            }
+
+            int sessionSeconds = Math.Max(0, (int)(DateTime.UtcNow - _sessionStartUtc).TotalSeconds);
+            SessionCloseSnapshot snapshot = _sessionTelemetry.CreateCloseSnapshot(BuildSessionSettingsSnapshot());
+            GoogleSheetTelemetry.SendSession(
+                _installId,
+                _userName,
+                _userEmail,
+                _isAutoMode,
+                sessionSeconds,
+                _termsAccepted,
+                _termsVersion,
+                _termsAcceptedUtc,
+                snapshot);
+        }
+
+        private SessionSettingsSnapshot BuildSessionSettingsSnapshot()
+        {
+            return new SessionSettingsSnapshot
+            {
+                Opacity = OpacitySlider?.Value ?? 50,
+                Dpi = DpiSlider?.Value ?? 250,
+                PageCache = CacheSizeSlider?.Value ?? 5,
+                Sensitivity = ImageThresholdSlider?.Value ?? 200,
+                IsAutoMode = _isAutoMode,
+                OverlayOnlyRevisions = UseFilteredOverlayPickerCheckbox?.IsChecked == true,
+                TintEnabled = TintImagesCheckBox?.IsChecked == true,
+                ColorBlindFriendly = _colorBlindFriendly
+            };
+        }
+
+        private void ShowBetaSplashIfNeeded()
+        {
+            bool fileLoadingDisabled = BetaConfig.IsFileLoadingDisabled;
+            bool showSplash;
+
+            if (fileLoadingDisabled)
+            {
+                showSplash = true;
+            }
+            else
+            {
+                int currentWeekKey = BetaConfig.GetCurrentWeekKey();
+                showSplash = _lastWeeklyReminderWeekKey != currentWeekKey;
+
+                if (showSplash)
+                {
+                    _lastWeeklyReminderWeekKey = currentWeekKey;
+                    SaveUserSettings();
+                }
+            }
+
+            if (!showSplash)
+            {
+                return;
+            }
+
+            var splash = new SplashWindow(fileLoadingDisabled)
+            {
+                Owner = this
+            };
+            splash.ShowDialog();
+        }
+
+        private void ApplyBetaFileLoadingMode()
+        {
+            bool fileLoadingDisabled = BetaConfig.IsFileLoadingDisabled;
+
+            if (LoadBaseButton != null)
+            {
+                LoadBaseButton.IsEnabled = !fileLoadingDisabled;
+            }
+
+            if (LoadOverlayButton != null)
+            {
+                LoadOverlayButton.IsEnabled = !fileLoadingDisabled;
+            }
+
+            if (ViewerBorder != null)
+            {
+                ViewerBorder.AllowDrop = !fileLoadingDisabled;
+            }
+
+            UpdateViewerBorderToolTip();
+        }
+
+        private bool HasAnyDocumentLoaded()
+        {
+            return !string.IsNullOrWhiteSpace(_basePane?.FilePath)
+                || !string.IsNullOrWhiteSpace(_overlayPane?.FilePath);
+        }
+
+        private void UpdateViewerBorderToolTip()
+        {
+            if (ViewerBorder == null)
+            {
+                return;
+            }
+
+            if (HasAnyDocumentLoaded())
+            {
+                ToolTipService.SetIsEnabled(ViewerBorder, false);
+                return;
+            }
+
+            ToolTipService.SetIsEnabled(ViewerBorder, true);
+            ViewerBorder.ToolTip = BetaConfig.IsFileLoadingDisabled
+                ? "Demonstration mode: only the included demo files are loaded. Ctrl + mouse wheel zooms; Ctrl + drag pans."
+                : "Drop a PDF or image here: left half loads base, right half loads overlay. Ctrl + mouse wheel zooms; Ctrl + drag pans.";
+        }
+
+        private static bool IsDemoFilePath(string? filePath)
+        {
+            if (string.IsNullOrWhiteSpace(filePath))
+            {
+                return false;
+            }
+
+            string fullPath = Path.GetFullPath(filePath);
+            return fullPath.Equals(Path.GetFullPath(GetDemoFilePath("Demo_Rev A.pdf")), StringComparison.OrdinalIgnoreCase)
+                || fullPath.Equals(Path.GetFullPath(GetDemoFilePath("Demo_Rev B.pdf")), StringComparison.OrdinalIgnoreCase);
+        }
+
+        private static bool CanLoadUserSelectedFile(string? filePath) =>
+            !BetaConfig.IsFileLoadingDisabled || IsDemoFilePath(filePath);
+
+        private static string GetDemoFilePath(string fileName) =>
+            Path.Combine(AppContext.BaseDirectory, "Resources", fileName);
+
+        private void LoadDemoFiles()
+        {
+            if (!BetaConfig.IsFileLoadingDisabled)
+            {
+                return;
+            }
+
+            string baseDemoPath = GetDemoFilePath("Demo_Rev A.pdf");
+            string overlayDemoPath = GetDemoFilePath("Demo_Rev B.pdf");
+
+            bool baseLoaded = File.Exists(baseDemoPath);
+            bool overlayLoaded = File.Exists(overlayDemoPath);
+
+            if (baseLoaded)
+            {
+                LoadFileIntoPane(_basePane, baseDemoPath);
+            }
+
+            if (overlayLoaded)
+            {
+                LoadFileIntoPane(_overlayPane, overlayDemoPath);
+            }
+
+            if (baseLoaded || overlayLoaded)
+            {
+                _sessionTelemetry.RecordDemoAutoLoaded();
+            }
+
+            if (!baseLoaded && !overlayLoaded)
+            {
+                SetStatus("Demonstration files could not be found.");
+            }
+
+            UpdateViewerBorderToolTip();
         }
 
         private void LoadBaseFile_Click(object sender, RoutedEventArgs e)
@@ -150,7 +416,7 @@ namespace PdfOverlayTool
 
         private void LoadFileIntoPane(DocumentPane pane, string? filePath)
         {
-            if (filePath == null)
+            if (filePath == null || !CanLoadUserSelectedFile(filePath))
             {
                 return;
             }
@@ -159,7 +425,8 @@ namespace PdfOverlayTool
             pane.FilePath = filePath;
             pane.PageCount = GetPdfPageCount(filePath);
             pane.PageTextBox.Text = "1";
-            LoadPage(pane);
+            RecordFileOpenTelemetry(pane, filePath);
+            LoadPage(pane, fitBaseToWindowOnLoad: pane == _basePane);
             UpdatePageNavigationButtons();
             UpdateOverlayNavigationButtons();
             UpdatePageInputState();
@@ -167,6 +434,26 @@ namespace PdfOverlayTool
             SetStatus($"Loaded {pane.Role} file: {TrimPathForDisplay(filePath)}");
             pane.FileNameTextBlock.Text = Path.GetFileNameWithoutExtension(filePath);
             pane.PageCountRun.Text = pane.PageCount?.ToString() ?? "0";
+            UpdateViewerBorderToolTip();
+        }
+
+        private void RecordFileOpenTelemetry(DocumentPane pane, string filePath)
+        {
+            try
+            {
+                long fileBytes = new FileInfo(filePath).Length;
+                double sizeMegabytes = fileBytes / (1024.0 * 1024.0);
+                int pageCount = pane.PageCount ?? 1;
+                _sessionTelemetry.RecordFileOpen(
+                    pane.Role,
+                    sizeMegabytes,
+                    pageCount,
+                    IsDemoFilePath(filePath));
+            }
+            catch
+            {
+                // Non-fatal: telemetry must never affect file loading.
+            }
         }
 
         private void ReloadPages_Click(object sender, RoutedEventArgs e)
@@ -180,7 +467,7 @@ namespace PdfOverlayTool
             SetStatus("Reloaded selected pages.");
         }
 
-        private void LoadPage(DocumentPane pane)
+        private void LoadPage(DocumentPane pane, bool fitBaseToWindowOnLoad = false)
         {
             if (string.IsNullOrWhiteSpace(pane.FilePath))
             {
@@ -200,7 +487,7 @@ namespace PdfOverlayTool
             BitmapSource? cached = TryGetRenderedPage(filePath, pageIndex);
             if (cached != null)
             {
-                ApplyLoadedPage(pane, filePath, pageIndex, cached, useTint);
+                ApplyLoadedPage(pane, filePath, pageIndex, cached, useTint, fitBaseToWindowOnLoad);
                 return;
             }
 
@@ -223,7 +510,7 @@ namespace PdfOverlayTool
                     {
                         if (loadVersion == pane.LoadVersion)
                         {
-                            ApplyLoadedPage(pane, filePath, pageIndex, image, useTint);
+                            ApplyLoadedPage(pane, filePath, pageIndex, image, useTint, fitBaseToWindowOnLoad);
                         }
                     }));
                 }
@@ -239,14 +526,28 @@ namespace PdfOverlayTool
             });
         }
 
-        private void ApplyLoadedPage(DocumentPane pane, string filePath, int pageIndex, BitmapSource image, bool useTint)
+        private void ApplyLoadedPage(
+            DocumentPane pane,
+            string filePath,
+            int pageIndex,
+            BitmapSource image,
+            bool useTint,
+            bool fitBaseToWindowOnLoad)
         {
             pane.OriginalImage = image;
             ApplyPaneTinting(pane, pageIndex);
 
             if (pane == _basePane)
             {
-                FitToWindowDeferred();
+                if (fitBaseToWindowOnLoad)
+                {
+                    FitToWindowDeferred();
+                }
+                else
+                {
+                    ApplyCurrentZoomDeferred();
+                }
+
                 UseFilteredOverlayPickerCheckbox.IsEnabled = true;
             }
             else
@@ -372,6 +673,13 @@ namespace PdfOverlayTool
 
         private void Viewer_DragOver(object sender, DragEventArgs e)
         {
+            if (BetaConfig.IsFileLoadingDisabled)
+            {
+                e.Effects = DragDropEffects.None;
+                e.Handled = true;
+                return;
+            }
+
             e.Effects = GetDroppedFilePath(e) != null ? DragDropEffects.Copy : DragDropEffects.None;
             e.Handled = true;
         }
@@ -392,6 +700,11 @@ namespace PdfOverlayTool
 
         private string? SelectPdfOrImageFile()
         {
+            if (BetaConfig.IsFileLoadingDisabled)
+            {
+                return null;
+            }
+
             OpenFileDialog dialog = new OpenFileDialog
             {
                 Title = "Select PDF or image file",
@@ -644,8 +957,121 @@ namespace PdfOverlayTool
 
         private void HelpButton_Click(object sender, RoutedEventArgs e)
         {
+            _sessionTelemetry.RecordHelpOpened();
             var helpWindow = new HelpWindow { Owner = this };
             helpWindow.ShowDialog();
+        }
+
+        private void SettingsButton_Click(object sender, RoutedEventArgs e)
+        {
+            var settingsWindow = new SettingsWindow(_colorBlindFriendly)
+            {
+                Owner = this
+            };
+
+            settingsWindow.ColorBlindFriendlyChanged += enabled => SetColorBlindFriendly(enabled);
+            settingsWindow.ResetDefaultsRequested += ResetPreferencesToDefaults;
+            settingsWindow.ShowDialog();
+        }
+
+        private void SetColorBlindFriendly(bool enabled)
+        {
+            if (_colorBlindFriendly == enabled)
+            {
+                return;
+            }
+
+            _colorBlindFriendly = enabled;
+            ApplyColorPalette();
+            RefreshLoadedDocumentsAfterDisplayChange();
+            SaveUserSettings();
+        }
+
+        private void ResetPreferencesToDefaults()
+        {
+            UserSettings defaults = UserSettings.CreatePreferenceDefaults();
+
+            _isRestoringSettings = true;
+            try
+            {
+                if (OpacitySlider != null)
+                {
+                    OpacitySlider.Value = defaults.Opacity;
+                }
+
+                if (DpiSlider != null)
+                {
+                    DpiSlider.Value = defaults.Dpi;
+                }
+
+                if (CacheSizeSlider != null)
+                {
+                    CacheSizeSlider.Value = defaults.PageCache;
+                }
+
+                if (ImageThresholdSlider != null)
+                {
+                    ImageThresholdSlider.Value = defaults.Sensitivity;
+                }
+
+                if (UseFilteredOverlayPickerCheckbox != null)
+                {
+                    UseFilteredOverlayPickerCheckbox.IsChecked = defaults.OverlayOnlyRevisions;
+                }
+
+                if (TintImagesCheckBox != null)
+                {
+                    TintImagesCheckBox.IsChecked = true;
+                }
+
+                _isAutoMode = defaults.IsAutoMode;
+                _colorBlindFriendly = defaults.ColorBlindFriendly;
+            }
+            finally
+            {
+                _isRestoringSettings = false;
+            }
+
+            SetAutoManualMode(_isAutoMode);
+            ApplyColorPalette();
+            ApplyOverlaySettings();
+            ApplyMemorySettings(invalidateRenders: true);
+            SaveUserSettings();
+            SetStatus("All settings restored to defaults.");
+        }
+
+        private void ApplyColorPalette()
+        {
+            _basePane.SetTintColor(ColorPalette.GetBaseTintColor(_colorBlindFriendly));
+            _overlayPane.SetTintColor(ColorPalette.GetOverlayTintColor(_colorBlindFriendly));
+            ColorPalette.UpdateBrushResources(Resources, _colorBlindFriendly);
+
+            if (BaseFileName != null)
+            {
+                BaseFileName.Foreground = (System.Windows.Media.Brush)FindResource("BaseFileBrush");
+            }
+
+            if (OverlayFileName != null)
+            {
+                OverlayFileName.Foreground = (System.Windows.Media.Brush)FindResource("OverlayFileBrush");
+            }
+
+            UpdateAutoModeButtonAppearance();
+        }
+
+        private void RefreshLoadedDocumentsAfterDisplayChange()
+        {
+            ClearRenderCaches();
+
+            if (!string.IsNullOrWhiteSpace(_basePane.FilePath))
+            {
+                LoadPage(_basePane);
+            }
+
+            if (!string.IsNullOrWhiteSpace(_overlayPane.FilePath))
+            {
+                LoadPage(_overlayPane);
+            }
         }
 
         private void RestoreUserSettings()
@@ -682,6 +1108,27 @@ namespace PdfOverlayTool
                 {
                     UseFilteredOverlayPickerCheckbox.IsChecked = settings.OverlayOnlyRevisions;
                 }
+
+                _isAutoMode = settings.IsAutoMode;
+                _colorBlindFriendly = settings.ColorBlindFriendly;
+                _lastWeeklyReminderWeekKey = settings.LastWeeklyReminderWeekKey;
+                _registrationComplete = settings.RegistrationComplete;
+                _userName = settings.UserName ?? "";
+                _userEmail = settings.UserEmail ?? "";
+
+                if (string.IsNullOrWhiteSpace(settings.InstallId))
+                {
+                    _installId = Guid.NewGuid().ToString("N");
+                    _installIdNeedsSave = true;
+                }
+                else
+                {
+                    _installId = settings.InstallId;
+                }
+
+                _termsAccepted = settings.TermsAccepted;
+                _termsVersion = settings.TermsVersion ?? "";
+                _termsAcceptedUtc = settings.TermsAcceptedUtc ?? "";
             }
             finally
             {
@@ -691,6 +1138,7 @@ namespace PdfOverlayTool
             // Sync the backing fields (selectedDpi, setOffset, etc.) without a full re-render;
             // no documents are loaded yet at startup.
             ApplyMemorySettings(invalidateRenders: false);
+            ApplyColorPalette();
         }
 
         private void SaveUserSettings()
@@ -706,7 +1154,17 @@ namespace PdfOverlayTool
                 Dpi = DpiSlider?.Value ?? 250,
                 PageCache = CacheSizeSlider?.Value ?? 5,
                 Sensitivity = ImageThresholdSlider?.Value ?? 200,
-                OverlayOnlyRevisions = UseFilteredOverlayPickerCheckbox?.IsChecked == true
+                OverlayOnlyRevisions = UseFilteredOverlayPickerCheckbox?.IsChecked == true,
+                IsAutoMode = _isAutoMode,
+                ColorBlindFriendly = _colorBlindFriendly,
+                LastWeeklyReminderWeekKey = _lastWeeklyReminderWeekKey,
+                RegistrationComplete = _registrationComplete,
+                UserName = _userName,
+                UserEmail = _userEmail,
+                InstallId = _installId,
+                TermsAccepted = _termsAccepted,
+                TermsVersion = _termsVersion,
+                TermsAcceptedUtc = _termsAcceptedUtc
             };
 
             settings.Save();
@@ -731,6 +1189,7 @@ namespace PdfOverlayTool
         {
             _isAutoMode = !_isAutoMode;
             SetAutoManualMode(_isAutoMode);
+            SaveUserSettings();
         }
 
         private void SetAutoManualMode(bool isAutoMode)
@@ -770,8 +1229,11 @@ namespace PdfOverlayTool
                 _memoryPressureActive = false;
                 _autoMemoryExceededSeconds = 0;
                 _autoMemorySevereExceededSeconds = 0;
+                _autoMemoryRecoverySeconds = 0;
+                _autoMemoryRecoveryDpiSeconds = 0;
                 _autoAdjustCooldownSeconds = 0;
                 _autoPerformanceReductionActive = false;
+                _autoPerformanceRecoveryActive = false;
                 return;
             }
 
@@ -794,12 +1256,16 @@ namespace PdfOverlayTool
 
             if (_memoryPressureActive)
             {
+                _autoPerformanceRecoveryActive = false;
+                _autoMemoryRecoverySeconds = 0;
+                _autoMemoryRecoveryDpiSeconds = 0;
+
                 if (GetCacheRadius() > 0)
                 {
                     _autoMemorySevereExceededSeconds = 0;
                     _autoMemoryExceededSeconds++;
 
-                    if (_autoMemoryExceededSeconds >= CACHE_REDUCE_DELAY_SECONDS)
+                    if (_autoMemoryExceededSeconds >= CACHE_ADJUST_DELAY_SECONDS)
                     {
                         ReduceCachePageSize();
                     }
@@ -809,25 +1275,103 @@ namespace PdfOverlayTool
                     _autoMemoryExceededSeconds = 0;
                     _autoMemorySevereExceededSeconds++;
 
-                    if (_autoMemorySevereExceededSeconds >= DPI_REDUCE_DELAY_SECONDS)
+                    if (_autoMemorySevereExceededSeconds >= DPI_ADJUST_DELAY_SECONDS)
                     {
                         ReduceDpi();
                     }
                 }
+
+                UpdateAutoModeButtonAppearance();
             }
             else
             {
                 _autoMemoryExceededSeconds = 0;
                 _autoMemorySevereExceededSeconds = 0;
+                _autoPerformanceReductionActive = false;
 
-                // Reduction has brought memory back under the limits: clear the
-                // "performance reduced" indicator so the AUTO button returns to white.
-                if (_autoPerformanceReductionActive)
+                if (TryGetMemoryRecoveryState(out bool canRecover)
+                    && canRecover
+                    && IsAutoSettingsBelowDefaults())
                 {
-                    _autoPerformanceReductionActive = false;
-                    UpdateAutoModeButtonAppearance();
+                    _autoPerformanceRecoveryActive = true;
+
+                    // Recovery: cache to 1, then DPI to default, then cache to default.
+                    if (GetCacheRadius() < MIN_AUTO_RECOVERY_PAGE_CACHE)
+                    {
+                        _autoMemoryRecoveryDpiSeconds = 0;
+                        _autoMemoryRecoverySeconds++;
+
+                        if (_autoMemoryRecoverySeconds >= CACHE_ADJUST_DELAY_SECONDS)
+                        {
+                            IncreaseCachePageSize(MIN_AUTO_RECOVERY_PAGE_CACHE);
+                        }
+                    }
+                    else if (DpiSlider != null && DpiSlider.Value < DEFAULT_AUTO_DPI)
+                    {
+                        _autoMemoryRecoverySeconds = 0;
+                        _autoMemoryRecoveryDpiSeconds++;
+
+                        if (_autoMemoryRecoveryDpiSeconds >= DPI_ADJUST_DELAY_SECONDS)
+                        {
+                            IncreaseDpi();
+                        }
+                    }
+                    else if (GetCacheRadius() < DEFAULT_AUTO_PAGE_CACHE)
+                    {
+                        _autoMemoryRecoveryDpiSeconds = 0;
+                        _autoMemoryRecoverySeconds++;
+
+                        if (_autoMemoryRecoverySeconds >= CACHE_ADJUST_DELAY_SECONDS)
+                        {
+                            IncreaseCachePageSize(DEFAULT_AUTO_PAGE_CACHE);
+                        }
+                    }
+                    else
+                    {
+                        _autoPerformanceRecoveryActive = false;
+                        _autoMemoryRecoverySeconds = 0;
+                        _autoMemoryRecoveryDpiSeconds = 0;
+                    }
                 }
+                else
+                {
+                    _autoPerformanceRecoveryActive = false;
+                    _autoMemoryRecoverySeconds = 0;
+                    _autoMemoryRecoveryDpiSeconds = 0;
+                }
+
+                UpdateAutoModeButtonAppearance();
             }
+        }
+
+        private bool IsAutoSettingsBelowDefaults()
+        {
+            double currentDpi = DpiSlider?.Value ?? DEFAULT_AUTO_DPI;
+            return GetCacheRadius() < DEFAULT_AUTO_PAGE_CACHE || currentDpi < DEFAULT_AUTO_DPI;
+        }
+
+        private bool TryGetMemoryRecoveryState(out bool canRecover)
+        {
+            canRecover = false;
+
+            long estimatedBytes = GetEstimatedCacheBytes();
+
+            if (!TryGetTotalSystemMemoryBytes(out long totalSystemMemoryBytes) || totalSystemMemoryBytes <= 0)
+            {
+                return false;
+            }
+
+            double cachePercentOfSystemMemory = estimatedBytes / (double)totalSystemMemoryBytes * 100.0;
+            bool cacheComfortablyLow = cachePercentOfSystemMemory <= CACHE_RECOVERY_PERCENT_THRESHOLD;
+
+            if (!TryGetSystemMemoryLoadPercent(out double systemMemoryLoadPercent))
+            {
+                return false;
+            }
+
+            bool systemComfortablyLow = systemMemoryLoadPercent <= SYSTEM_RECOVERY_LOAD_THRESHOLD;
+            canRecover = cacheComfortablyLow && systemComfortablyLow;
+            return true;
         }
 
         private bool TryGetMemoryThresholdState(out bool cacheOverThreshold, out bool systemOverThreshold)
@@ -864,6 +1408,7 @@ namespace PdfOverlayTool
             // Assigning the slider value raises ValueChanged, which applies the new setting.
             CacheSizeSlider.Value = newCacheRadius;
             _autoPerformanceReductionActive = true;
+            _sessionTelemetry.RecordAutoMemoryReductionEngaged();
             UpdateAutoModeButtonAppearance();
             SetStatus(LOW_MEMORY_MESSAGE, isError: true);
             _autoMemoryExceededSeconds = 0;
@@ -886,9 +1431,54 @@ namespace PdfOverlayTool
             // Assigning the slider value raises ValueChanged, which applies the new setting.
             DpiSlider.Value = newDpi;
             _autoPerformanceReductionActive = true;
+            _sessionTelemetry.RecordAutoMemoryReductionEngaged();
             UpdateAutoModeButtonAppearance();
             SetStatus(LOW_MEMORY_MESSAGE, isError: true);
             _autoMemorySevereExceededSeconds = 0;
+            _autoAdjustCooldownSeconds = AUTO_ADJUST_COOLDOWN_SECONDS;
+        }
+
+        private void IncreaseCachePageSize(double maxCacheRadius)
+        {
+            if (CacheSizeSlider == null)
+            {
+                return;
+            }
+
+            double newCacheRadius = Math.Min(maxCacheRadius, CacheSizeSlider.Value + 1);
+            if (newCacheRadius == CacheSizeSlider.Value)
+            {
+                return;
+            }
+
+            CacheSizeSlider.Value = newCacheRadius;
+            _autoPerformanceRecoveryActive = true;
+            _sessionTelemetry.RecordAutoMemoryRecoveryEngaged();
+            UpdateAutoModeButtonAppearance();
+            SetStatus(RECOVERY_MESSAGE);
+            _autoMemoryRecoverySeconds = 0;
+            _autoAdjustCooldownSeconds = AUTO_ADJUST_COOLDOWN_SECONDS;
+        }
+
+        private void IncreaseDpi()
+        {
+            if (DpiSlider == null)
+            {
+                return;
+            }
+
+            double newDpi = Math.Min(DEFAULT_AUTO_DPI, DpiSlider.Value + DPI_INCREASE_STEP);
+            if (newDpi == DpiSlider.Value)
+            {
+                return;
+            }
+
+            DpiSlider.Value = newDpi;
+            _autoPerformanceRecoveryActive = true;
+            _sessionTelemetry.RecordAutoMemoryRecoveryEngaged();
+            UpdateAutoModeButtonAppearance();
+            SetStatus(RECOVERY_MESSAGE);
+            _autoMemoryRecoveryDpiSeconds = 0;
             _autoAdjustCooldownSeconds = AUTO_ADJUST_COOLDOWN_SECONDS;
         }
 
@@ -993,13 +1583,25 @@ namespace PdfOverlayTool
                 return;
             }
 
-            if (!_isAutoMode || !_autoPerformanceReductionActive)
+            if (!_isAutoMode)
             {
-                AutoModeToggleButton.Background = new SolidColorBrush(Color.FromRgb(255, 255, 255));
+                AutoModeToggleButton.Background = (SolidColorBrush)FindResource("AutoNormalBrush");
                 return;
             }
 
-            AutoModeToggleButton.Background = new SolidColorBrush(Color.FromRgb(250, 224, 150));
+            if (_autoPerformanceReductionActive)
+            {
+                AutoModeToggleButton.Background = (SolidColorBrush)FindResource("AutoReducedBrush");
+                return;
+            }
+
+            if (_autoPerformanceRecoveryActive)
+            {
+                AutoModeToggleButton.Background = (SolidColorBrush)FindResource("AutoRecoveryBrush");
+                return;
+            }
+
+            AutoModeToggleButton.Background = (SolidColorBrush)FindResource("AutoNormalBrush");
         }
 
         private long GetEstimatedCacheBytes()
@@ -1021,6 +1623,7 @@ namespace PdfOverlayTool
             }
 
             long estimatedBytes = GetEstimatedCacheBytes();
+            _sessionTelemetry.RecordCacheBytes(estimatedBytes);
 
             if (TryGetTotalSystemMemoryBytes(out long totalSystemMemoryBytes) && totalSystemMemoryBytes > 0)
             {
@@ -1414,6 +2017,20 @@ namespace PdfOverlayTool
             {
                 FitToWindow_Click(this, new RoutedEventArgs());
             }), DispatcherPriority.Loaded);
+        }
+
+        private void ApplyCurrentZoomDeferred()
+        {
+            Dispatcher.BeginInvoke(ApplyCurrentZoom, DispatcherPriority.Loaded);
+        }
+
+        private void ApplyCurrentZoom()
+        {
+            if (OverlayHost?.LayoutTransform is ScaleTransform transform)
+            {
+                transform.ScaleX = _zoom;
+                transform.ScaleY = _zoom;
+            }
         }
 
         private void NextPage_Click(object sender, RoutedEventArgs e)
@@ -2063,9 +2680,14 @@ namespace PdfOverlayTool
                 FileNameTextBlock = fileNameTextBlock;
             }
 
+            public void SetTintColor(Color tintColor)
+            {
+                TintColor = tintColor;
+            }
+
             public string Role { get; }
             public string DisplayName { get; }
-            public Color TintColor { get; }
+            public Color TintColor { get; private set; }
             public Image ImageControl { get; }
             public TextBox PageTextBox { get; }
             public Run PageCountRun { get; }

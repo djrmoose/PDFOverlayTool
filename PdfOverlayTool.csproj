@@ -19,4 +19,13 @@
   <Resource Include="Resources\OCT.ico" />
 </ItemGroup>
 
+  <ItemGroup>
+    <Content Include="Resources\Demo_Rev A.pdf">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </Content>
+    <Content Include="Resources\Demo_Rev B.pdf">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </Content>
+  </ItemGroup>
+
 </Project>
