@@ -37,6 +37,7 @@ namespace PdfOverlayTool
             string termsVersion,
             string termsAcceptedUtc,
             SessionCloseSnapshot? sessionSnapshot,
+            ColorPaletteSelection paletteSelection,
             Exception exception,
             string origin,
             bool isTerminating)
@@ -51,7 +52,7 @@ namespace PdfOverlayTool
             payload.SessionSeconds = sessionSeconds;
 
             var details = sessionSnapshot == null
-                ? BuildRuntimeDetails(termsAccepted, termsVersion, termsAcceptedUtc)
+                ? BuildRuntimeDetails(termsAccepted, termsVersion, termsAcceptedUtc, paletteSelection)
                 : BuildSessionDetails(termsAccepted, termsVersion, termsAcceptedUtc, sessionSnapshot);
 
             foreach (var entry in TelemetryCrashHandler.BuildCrashDetails(exception, origin, isTerminating))
@@ -182,15 +183,29 @@ namespace PdfOverlayTool
         private static Dictionary<string, object?> BuildRuntimeDetails(
             bool termsAccepted,
             string termsVersion,
-            string termsAcceptedUtc)
+            string termsAcceptedUtc,
+            ColorPaletteSelection? paletteSelection = null)
         {
-            return new Dictionary<string, object?>
+            var details = new Dictionary<string, object?>
             {
                 ["termsAccepted"] = termsAccepted,
                 ["termsVersion"] = termsVersion,
                 ["termsAcceptedUtc"] = termsAcceptedUtc,
                 ["demoOnly"] = BetaConfig.IsFileLoadingDisabled
             };
+
+            if (paletteSelection.HasValue)
+            {
+                AddColorPaletteDetails(details, paletteSelection.Value);
+            }
+
+            return details;
+        }
+
+        private static void AddColorPaletteDetails(Dictionary<string, object?> details, ColorPaletteSelection selection)
+        {
+            details["colorPalette"] = ColorPalette.GetThemeName(selection.Theme);
+            details["colorBlindFriendly"] = selection.ColorBlindFriendly;
         }
 
         private static Dictionary<string, object?> BuildSessionDetails(
@@ -199,7 +214,14 @@ namespace PdfOverlayTool
             string termsAcceptedUtc,
             SessionCloseSnapshot snapshot)
         {
-            var details = BuildRuntimeDetails(termsAccepted, termsVersion, termsAcceptedUtc);
+            var paletteSelection = ColorPalette.ParseSettings(
+                snapshot.Settings.ColorPaletteName,
+                snapshot.Settings.ColorBlindFriendly);
+            var details = BuildRuntimeDetails(
+                termsAccepted,
+                termsVersion,
+                termsAcceptedUtc,
+                paletteSelection);
 
             details["settingsAtClose"] = new Dictionary<string, object?>
             {
@@ -210,11 +232,15 @@ namespace PdfOverlayTool
                 ["isAutoMode"] = snapshot.Settings.IsAutoMode,
                 ["overlayOnlyRevisions"] = snapshot.Settings.OverlayOnlyRevisions,
                 ["tintEnabled"] = snapshot.Settings.TintEnabled,
-                ["colorBlindFriendly"] = snapshot.Settings.ColorBlindFriendly
+                ["colorBlindFriendly"] = snapshot.Settings.ColorBlindFriendly,
+                ["colorPalette"] = snapshot.Settings.ColorPaletteName
             };
 
             details["filesOpenedCount"] = snapshot.FilesOpenedCount;
-            details["filesOpened"] = snapshot.FilesOpened;
+            details["maxFileSizeMb"] = snapshot.MaxFileSizeMegabytes;
+            details["maxFilePageCount"] = snapshot.MaxFilePageCount;
+            details["avgFileSizeMb"] = snapshot.AvgFileSizeMegabytes;
+            details["avgFilePageCount"] = snapshot.AvgFilePageCount;
             details["demoStatus"] = snapshot.DemoStatus;
             details["helpClickCount"] = snapshot.HelpClickCount;
             details["autoMemoryReductionEngaged"] = snapshot.AutoMemoryReductionEngaged;

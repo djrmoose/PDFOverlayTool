@@ -23,7 +23,7 @@ namespace PdfOverlayTool
         public static int GetCurrentWeekKey(DateTime? date = null)
         {
             DateTime value = date ?? DateTime.Today;
-            return value.Year * 100 + ISOWeek.GetWeekOfYear(value);
+            return ISOWeek.GetYear(value) * 100 + ISOWeek.GetWeekOfYear(value);
         }
     }
 }

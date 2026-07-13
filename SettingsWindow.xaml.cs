@@ -1,31 +1,37 @@
 using System.Windows;
+using System.Windows.Controls;
 
 namespace PdfOverlayTool
 {
     public partial class SettingsWindow : Window
     {
-        private bool _suppressColorBlindEvents;
+        private bool _suppressPaletteEvents;
 
-        public event Action<bool>? ColorBlindFriendlyChanged;
+        public event Action<ColorPaletteSelection>? PaletteChanged;
         public event Action? ResetDefaultsRequested;
 
-        public SettingsWindow(bool colorBlindFriendly)
+        public SettingsWindow(ColorPaletteSelection selection)
         {
             InitializeComponent();
-
-            _suppressColorBlindEvents = true;
-            ColorBlindFriendlyCheckBox.IsChecked = colorBlindFriendly;
-            _suppressColorBlindEvents = false;
+            ApplyPreview(selection);
+            SelectPalette(selection, notify: false);
         }
 
-        private void ColorBlindFriendlyCheckBox_Changed(object sender, RoutedEventArgs e)
+        private void PaletteOption_Changed(object sender, RoutedEventArgs e)
         {
-            if (_suppressColorBlindEvents)
+            if (_suppressPaletteEvents)
             {
                 return;
             }
 
-            ColorBlindFriendlyChanged?.Invoke(ColorBlindFriendlyCheckBox.IsChecked == true);
+            if (sender is RadioButton radio && radio.IsChecked != true)
+            {
+                return;
+            }
+
+            ColorPaletteSelection selection = GetSelectedPalette();
+            ApplyPreview(selection);
+            PaletteChanged?.Invoke(selection);
         }
 
         private void ResetDefaultsButton_Click(object sender, RoutedEventArgs e)
@@ -46,10 +52,37 @@ namespace PdfOverlayTool
             }
 
             ResetDefaultsRequested?.Invoke();
+            ColorPaletteSelection defaults = ColorPaletteSelection.Default;
+            SelectPalette(defaults, notify: false);
+            ApplyPreview(defaults);
+        }
 
-            _suppressColorBlindEvents = true;
-            ColorBlindFriendlyCheckBox.IsChecked = false;
-            _suppressColorBlindEvents = false;
+        private ColorPaletteSelection GetSelectedPalette()
+        {
+            AppTheme theme = BlueGreyThemeRadio.IsChecked == true
+                ? AppTheme.BlueGrey
+                : AppTheme.Standard;
+
+            return new ColorPaletteSelection(theme, ColorBlindFriendlyCheckBox.IsChecked == true);
+        }
+
+        private void SelectPalette(ColorPaletteSelection selection, bool notify)
+        {
+            _suppressPaletteEvents = true;
+            StandardThemeRadio.IsChecked = selection.Theme == AppTheme.Standard;
+            BlueGreyThemeRadio.IsChecked = selection.Theme == AppTheme.BlueGrey;
+            ColorBlindFriendlyCheckBox.IsChecked = selection.ColorBlindFriendly;
+            _suppressPaletteEvents = false;
+
+            if (notify)
+            {
+                PaletteChanged?.Invoke(selection);
+            }
+        }
+
+        private void ApplyPreview(ColorPaletteSelection selection)
+        {
+            ColorPalette.ApplyDialogTheme(this, selection);
         }
     }
 }

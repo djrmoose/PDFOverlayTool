@@ -44,6 +44,7 @@ namespace PdfOverlayTool
         private const double ZOOM_STEP = 1.05;
         private const double ZOOM_MIN = 0.1;
         private const double ZOOM_MAX = 10.0;
+        private const double SCALE_WHEEL_STEP = 1.0;
 
         // Auto memory-management thresholds / timings
         private const double CACHE_MEMORY_PERCENT_THRESHOLD = 25.0;
@@ -52,14 +53,22 @@ namespace PdfOverlayTool
         private const double CACHE_RECOVERY_PERCENT_THRESHOLD = 15.0;
         private const double SYSTEM_RECOVERY_LOAD_THRESHOLD = 80.0;
         private const int CACHE_ADJUST_DELAY_SECONDS = 2;
-        private const int DPI_ADJUST_DELAY_SECONDS = 6;
         private const int AUTO_ADJUST_COOLDOWN_SECONDS = 2;
-        private const double DPI_REDUCE_STEP = 25;
-        private const double DPI_INCREASE_STEP = 25;
-        private const double MIN_AUTO_DPI = 150;
-        private const double DEFAULT_AUTO_DPI = 250;
-        private const double MIN_AUTO_RECOVERY_PAGE_CACHE = 1;
-        private const double DEFAULT_AUTO_PAGE_CACHE = 5;
+
+        // Linked AUTO quality levels: cache and DPI stepped together (DPI fixed at 250 through level 4).
+        // Final descent splits cache then DPI: (1,200) → (0,200) → (0,150).
+        private static readonly (double Cache, double Dpi)[] AutoQualityLevels =
+        {
+            (0, 150), // level 0 — floor
+            (0, 200), // level 1 — cache stepdown from 1
+            (1, 200), // level 2
+            (2, 225), // level 3
+            (3, 250), // level 4
+            (4, 250), // level 5
+            (5, 250), // level 6 — default
+        };
+
+        private const int MaxAutoQualityLevel = 6;
 
         private const string LOW_MEMORY_MESSAGE = "Low memory - AUTO performance reduction!";
         private const string RECOVERY_MESSAGE = "AUTO restoring quality - memory headroom available.";
@@ -82,28 +91,27 @@ namespace PdfOverlayTool
         private double _panStartHorizontalOffset;
         private double _panStartVerticalOffset;
 
-        private Dictionary<(string path, int page), BitmapSource> _pageCache = new();
+        private Dictionary<(string path, int page, string role), BitmapSource> _displayCache = new();
         private Dictionary<string, byte[]> _pdfCache = new();
-        private Dictionary<(string path, int page, string role), BitmapSource> _tintCache = new();
-        private readonly object _tintCacheLock = new();
-        private readonly object _pageCacheLock = new();
+        private readonly object _displayCacheLock = new();
         private readonly object _pdfCacheLock = new();
         private readonly Dictionary<(string path, int page), object> _renderGates = new();
         private readonly object _renderGatesLock = new();
 
-        // Running total of page + tint cache bytes, maintained on every insert/remove so
-        // memory checks don't have to iterate both caches (they run on every page fetch).
+        // Running total of display-cache bytes, maintained on every insert/remove so
+        // memory checks don't have to iterate the cache (they run on every page fetch).
         private long _estimatedCacheBytes;
+        private long _estimatedPdfCacheBytes;
 
         private int selectedDpi = 250;
+        private int _renderDpiForCurrentDisplay = 250;
         private int imageThreshold = 200;
 
         private double setOffset = 5; // Number of adjacent pages to preload
         private DispatcherTimer? _autoMemoryAdjustmentTimer;
-        private int _autoMemoryExceededSeconds;
-        private int _autoMemorySevereExceededSeconds;
-        private int _autoMemoryRecoverySeconds;
-        private int _autoMemoryRecoveryDpiSeconds;
+        private int _autoQualityLevel = MaxAutoQualityLevel;
+        private int _autoPressureSeconds;
+        private int _autoRecoverySeconds;
         private bool _autoPerformanceReductionActive;
         private bool _autoPerformanceRecoveryActive;
         private bool _memoryPressureActive;
@@ -127,7 +135,7 @@ namespace PdfOverlayTool
 
         private readonly SessionTelemetry _sessionTelemetry = new();
 
-        private bool _colorBlindFriendly;
+        private ColorPaletteSelection _colorPaletteSelection = ColorPaletteSelection.Default;
 
         private DocumentPane _basePane = null!;
         private DocumentPane _overlayPane = null!;
@@ -136,8 +144,8 @@ namespace PdfOverlayTool
         {
             InitializeComponent();
 
-            _basePane = new DocumentPane("base", "Base", ColorPalette.GetBaseTintColor(false), BaseImage, BasePageTextBox, BasePageCount, BaseFileName);
-            _overlayPane = new DocumentPane("overlay", "Overlay", ColorPalette.GetOverlayTintColor(false), OverlayImage, OverlayPageTextBox, OverlayPageCount, OverlayFileName);
+            _basePane = new DocumentPane("base", "Base", ColorPalette.GetBaseTintColor(ColorPaletteSelection.Default), BaseImage, BasePageTextBox, BasePageCount, BaseFileName);
+            _overlayPane = new DocumentPane("overlay", "Overlay", ColorPalette.GetOverlayTintColor(ColorPaletteSelection.Default), OverlayImage, OverlayPageTextBox, OverlayPageCount, OverlayFileName);
 
             RestoreUserSettings();
             _settingsReady = true;
@@ -262,7 +270,8 @@ namespace PdfOverlayTool
                 IsAutoMode = _isAutoMode,
                 OverlayOnlyRevisions = UseFilteredOverlayPickerCheckbox?.IsChecked == true,
                 TintEnabled = TintImagesCheckBox?.IsChecked == true,
-                ColorBlindFriendly = _colorBlindFriendly
+                ColorBlindFriendly = _colorPaletteSelection.ColorBlindFriendly,
+                ColorPaletteName = ColorPalette.GetThemeName(_colorPaletteSelection.Theme)
             };
         }
 
@@ -425,8 +434,19 @@ namespace PdfOverlayTool
             pane.FilePath = filePath;
             pane.PageCount = GetPdfPageCount(filePath);
             pane.PageTextBox.Text = "1";
+
+            DocumentPane otherPane = pane == _basePane ? _overlayPane : _basePane;
+            if (!string.IsNullOrWhiteSpace(otherPane.FilePath)
+                && GetPageNumber(otherPane.PageTextBox.Text) != 1)
+            {
+                otherPane.PageTextBox.Text = "1";
+                LoadPage(otherPane);
+            }
+
             RecordFileOpenTelemetry(pane, filePath);
-            LoadPage(pane, fitBaseToWindowOnLoad: pane == _basePane);
+            bool fitToWindowOnLoad = pane == _basePane
+                || string.IsNullOrWhiteSpace(_basePane?.FilePath);
+            LoadPage(pane, fitToWindowOnLoad: fitToWindowOnLoad);
             UpdatePageNavigationButtons();
             UpdateOverlayNavigationButtons();
             UpdatePageInputState();
@@ -444,11 +464,7 @@ namespace PdfOverlayTool
                 long fileBytes = new FileInfo(filePath).Length;
                 double sizeMegabytes = fileBytes / (1024.0 * 1024.0);
                 int pageCount = pane.PageCount ?? 1;
-                _sessionTelemetry.RecordFileOpen(
-                    pane.Role,
-                    sizeMegabytes,
-                    pageCount,
-                    IsDemoFilePath(filePath));
+                _sessionTelemetry.RecordFileOpen(sizeMegabytes, pageCount);
             }
             catch
             {
@@ -463,11 +479,10 @@ namespace PdfOverlayTool
             UpdatePageNavigationButtons();
             UpdateOverlayNavigationButtons();
 
-            ApplyImageTinting();
             SetStatus("Reloaded selected pages.");
         }
 
-        private void LoadPage(DocumentPane pane, bool fitBaseToWindowOnLoad = false)
+        private void LoadPage(DocumentPane pane, bool fitToWindowOnLoad = false)
         {
             if (string.IsNullOrWhiteSpace(pane.FilePath))
             {
@@ -483,34 +498,33 @@ namespace PdfOverlayTool
             // Only ever touched on the UI thread.
             int loadVersion = ++pane.LoadVersion;
 
-            // Fast path: already rendered - apply immediately with no flicker.
-            BitmapSource? cached = TryGetRenderedPage(filePath, pageIndex);
+            // Fast path: display bitmap already cached for this pane.
+            BitmapSource? cached = TryGetCachedDisplayBitmap(filePath, pageIndex, pane.Role);
             if (cached != null)
             {
-                ApplyLoadedPage(pane, filePath, pageIndex, cached, useTint, fitBaseToWindowOnLoad);
+                ApplyLoadedPage(pane, filePath, pageIndex, cached, fitToWindowOnLoad);
                 return;
             }
 
             // Slow path: render off the UI thread so page turns never freeze the window.
             SetProcessingState(true);
+            Color tintColor = pane.TintColor;
             Task.Run(() =>
             {
                 try
                 {
-                    BitmapSource image = GetCachedPage(filePath, pageIndex);
-
-                    // Pre-compute the tint here too; otherwise the first ApplyPaneTinting
-                    // would do this full-page pass on the UI thread.
-                    if (useTint)
-                    {
-                        GetCachedTintedPage(filePath, pageIndex, image, pane.Role, pane.TintColor);
-                    }
+                    BitmapSource display = GetDisplayBitmap(
+                        filePath,
+                        pageIndex,
+                        pane.Role,
+                        tintColor,
+                        useTint);
 
                     Dispatcher.BeginInvoke(new Action(() =>
                     {
                         if (loadVersion == pane.LoadVersion)
                         {
-                            ApplyLoadedPage(pane, filePath, pageIndex, image, useTint, fitBaseToWindowOnLoad);
+                            ApplyLoadedPage(pane, filePath, pageIndex, display, fitToWindowOnLoad);
                         }
                     }));
                 }
@@ -530,24 +544,13 @@ namespace PdfOverlayTool
             DocumentPane pane,
             string filePath,
             int pageIndex,
-            BitmapSource image,
-            bool useTint,
-            bool fitBaseToWindowOnLoad)
+            BitmapSource displayBitmap,
+            bool fitToWindowOnLoad = false)
         {
-            pane.OriginalImage = image;
-            ApplyPaneTinting(pane, pageIndex);
+            pane.ImageControl.Source = displayBitmap;
 
             if (pane == _basePane)
             {
-                if (fitBaseToWindowOnLoad)
-                {
-                    FitToWindowDeferred();
-                }
-                else
-                {
-                    ApplyCurrentZoomDeferred();
-                }
-
                 UseFilteredOverlayPickerCheckbox.IsEnabled = true;
             }
             else
@@ -557,8 +560,19 @@ namespace PdfOverlayTool
                 ApplyOverlayRotation();
             }
 
+            if (fitToWindowOnLoad)
+            {
+                _renderDpiForCurrentDisplay = selectedDpi;
+                FitToWindowDeferred();
+            }
+            else if (pane == _basePane)
+            {
+                _renderDpiForCurrentDisplay = selectedDpi;
+                ApplyCurrentZoomDeferred();
+            }
+
             PrunePageCache(filePath, pageIndex);
-            PreloadAdjacentPages(pane, filePath, pageIndex, useTint);
+            PreloadAdjacentPages(pane, filePath, pageIndex);
 
             // A successful load/navigation always shows black; red is only used to
             // flag a *failed* page-change attempt (see TryAdvancePane).
@@ -848,38 +862,23 @@ namespace PdfOverlayTool
 
         private void TintImagesCheckBox_Changed(object sender, RoutedEventArgs e)
         {
-            ApplyImageTinting();
-        }
-
-        private void ApplyImageTinting()
-        {
-            // The Tint checkbox's Checked handler can fire during InitializeComponent, before the panes exist.
             if (_basePane == null || _overlayPane == null)
             {
                 return;
             }
 
-            ApplyPaneTinting(_basePane, GetPageIndexFromTextBox(_basePane.PageTextBox?.Text));
-            ApplyPaneTinting(_overlayPane, GetPageIndexFromTextBox(_overlayPane.PageTextBox?.Text));
-        }
+            // Cached bitmaps are either tinted or untinted — not both — so mode changes require a fresh cache.
+            ClearRenderCaches();
 
-        private void ApplyPaneTinting(DocumentPane pane, int pageIndex)
-        {
-            if (pane.OriginalImage == null || string.IsNullOrWhiteSpace(pane.FilePath))
+            if (!string.IsNullOrWhiteSpace(_basePane.FilePath))
             {
-                return;
+                LoadPage(_basePane);
             }
 
-            bool useTint = TintImagesCheckBox?.IsChecked == true;
-
-            pane.ImageControl.Source = useTint
-                ? GetCachedTintedPage(
-                    pane.FilePath,
-                    pageIndex,
-                    pane.OriginalImage,
-                    pane.Role,
-                    pane.TintColor)
-                : pane.OriginalImage;
+            if (!string.IsNullOrWhiteSpace(_overlayPane.FilePath))
+            {
+                LoadPage(_overlayPane);
+            }
         }
 
         private BitmapSource CreateTintedImage(BitmapSource source, Color tintColor)
@@ -964,24 +963,24 @@ namespace PdfOverlayTool
 
         private void SettingsButton_Click(object sender, RoutedEventArgs e)
         {
-            var settingsWindow = new SettingsWindow(_colorBlindFriendly)
+            var settingsWindow = new SettingsWindow(_colorPaletteSelection)
             {
                 Owner = this
             };
 
-            settingsWindow.ColorBlindFriendlyChanged += enabled => SetColorBlindFriendly(enabled);
+            settingsWindow.PaletteChanged += SetColorPaletteSelection;
             settingsWindow.ResetDefaultsRequested += ResetPreferencesToDefaults;
             settingsWindow.ShowDialog();
         }
 
-        private void SetColorBlindFriendly(bool enabled)
+        private void SetColorPaletteSelection(ColorPaletteSelection selection)
         {
-            if (_colorBlindFriendly == enabled)
+            if (_colorPaletteSelection == selection)
             {
                 return;
             }
 
-            _colorBlindFriendly = enabled;
+            _colorPaletteSelection = selection;
             ApplyColorPalette();
             RefreshLoadedDocumentsAfterDisplayChange();
             SaveUserSettings();
@@ -1025,7 +1024,8 @@ namespace PdfOverlayTool
                 }
 
                 _isAutoMode = defaults.IsAutoMode;
-                _colorBlindFriendly = defaults.ColorBlindFriendly;
+                _colorPaletteSelection = ColorPaletteSelection.Default;
+                _autoQualityLevel = MaxAutoQualityLevel;
             }
             finally
             {
@@ -1042,9 +1042,10 @@ namespace PdfOverlayTool
 
         private void ApplyColorPalette()
         {
-            _basePane.SetTintColor(ColorPalette.GetBaseTintColor(_colorBlindFriendly));
-            _overlayPane.SetTintColor(ColorPalette.GetOverlayTintColor(_colorBlindFriendly));
-            ColorPalette.UpdateBrushResources(Resources, _colorBlindFriendly);
+            ColorPalette.ApplyTheme(_colorPaletteSelection, Resources);
+
+            _basePane.SetTintColor(ColorPalette.GetBaseTintColor(_colorPaletteSelection));
+            _overlayPane.SetTintColor(ColorPalette.GetOverlayTintColor(_colorPaletteSelection));
 
             if (BaseFileName != null)
             {
@@ -1057,6 +1058,63 @@ namespace PdfOverlayTool
             }
 
             UpdateAutoModeButtonAppearance();
+            RefreshThemeControlChrome();
+        }
+
+        private void RefreshThemeControlChrome()
+        {
+            var accentBrush = (System.Windows.Media.Brush)FindResource("AccentBrush");
+            var textBrush = (System.Windows.Media.Brush)FindResource("TextBrush");
+            var controlBackground = (System.Windows.Media.Brush)FindResource("ControlBackgroundBrush");
+            var controlBorder = (System.Windows.Media.Brush)FindResource("ControlBorderBrush");
+            var prominentSliderStyle = (Style)FindResource("ProminentSliderStyle");
+
+            foreach (Slider? slider in new Slider?[]
+            {
+                OpacitySlider,
+                ScaleSlider,
+                RotateFineSlider,
+                DpiSlider,
+                CacheSizeSlider,
+                ImageThresholdSlider,
+                XOffsetSlider,
+                YOffsetSlider
+            })
+            {
+                if (slider == null)
+                {
+                    continue;
+                }
+
+                slider.Foreground = accentBrush;
+                slider.Style = null;
+                slider.Style = prominentSliderStyle;
+            }
+
+            foreach (Button? button in new Button?[]
+            {
+                LoadBaseButton,
+                LoadOverlayButton,
+                PreviousPageButton,
+                NextPageButton,
+                PreviousPageOffsetButton,
+                NextPageOffsetButton,
+                HelpButton,
+                SettingsButton,
+                AutoModeToggleButton
+            })
+            {
+                if (button == null)
+                {
+                    continue;
+                }
+
+                button.Background = controlBackground;
+                button.BorderBrush = controlBorder;
+                button.Foreground = button == HelpButton || button == SettingsButton
+                    ? accentBrush
+                    : textBrush;
+            }
         }
 
         private void RefreshLoadedDocumentsAfterDisplayChange()
@@ -1110,7 +1168,7 @@ namespace PdfOverlayTool
                 }
 
                 _isAutoMode = settings.IsAutoMode;
-                _colorBlindFriendly = settings.ColorBlindFriendly;
+                _colorPaletteSelection = ColorPalette.ParseSettings(settings.ColorPaletteMode, settings.ColorBlindFriendly);
                 _lastWeeklyReminderWeekKey = settings.LastWeeklyReminderWeekKey;
                 _registrationComplete = settings.RegistrationComplete;
                 _userName = settings.UserName ?? "";
@@ -1139,6 +1197,11 @@ namespace PdfOverlayTool
             // no documents are loaded yet at startup.
             ApplyMemorySettings(invalidateRenders: false);
             ApplyColorPalette();
+
+            if (_isAutoMode)
+            {
+                SyncAutoQualityLevelFromSliders();
+            }
         }
 
         private void SaveUserSettings()
@@ -1156,7 +1219,8 @@ namespace PdfOverlayTool
                 Sensitivity = ImageThresholdSlider?.Value ?? 200,
                 OverlayOnlyRevisions = UseFilteredOverlayPickerCheckbox?.IsChecked == true,
                 IsAutoMode = _isAutoMode,
-                ColorBlindFriendly = _colorBlindFriendly,
+                ColorPaletteMode = ColorPalette.GetThemeName(_colorPaletteSelection.Theme),
+                ColorBlindFriendly = _colorPaletteSelection.ColorBlindFriendly,
                 LastWeeklyReminderWeekKey = _lastWeeklyReminderWeekKey,
                 RegistrationComplete = _registrationComplete,
                 UserName = _userName,
@@ -1201,6 +1265,11 @@ namespace PdfOverlayTool
 
             bool showAdvancedControls = !isAutoMode;
 
+            if (AutoPerformanceReadout != null)
+            {
+                AutoPerformanceReadout.Visibility = isAutoMode ? Visibility.Visible : Visibility.Collapsed;
+            }
+
             if (DpiLabel != null) DpiLabel.Visibility = showAdvancedControls ? Visibility.Visible : Visibility.Collapsed;
             if (DpiControls != null) DpiControls.Visibility = showAdvancedControls ? Visibility.Visible : Visibility.Collapsed;
             if (PageCacheLabel != null) PageCacheLabel.Visibility = showAdvancedControls ? Visibility.Visible : Visibility.Collapsed;
@@ -1208,6 +1277,11 @@ namespace PdfOverlayTool
             if (SensitivityLabel != null) SensitivityLabel.Visibility = showAdvancedControls ? Visibility.Visible : Visibility.Collapsed;
             if (SensitivityControls != null) SensitivityControls.Visibility = showAdvancedControls ? Visibility.Visible : Visibility.Collapsed;
             if (TintImagesCheckBox != null) TintImagesCheckBox.Visibility = showAdvancedControls ? Visibility.Visible : Visibility.Collapsed;
+
+            if (isAutoMode)
+            {
+                SyncAutoQualityLevelFromSliders();
+            }
 
             UpdateAutoModeButtonAppearance();
         }
@@ -1227,10 +1301,8 @@ namespace PdfOverlayTool
             if (!_isAutoMode)
             {
                 _memoryPressureActive = false;
-                _autoMemoryExceededSeconds = 0;
-                _autoMemorySevereExceededSeconds = 0;
-                _autoMemoryRecoverySeconds = 0;
-                _autoMemoryRecoveryDpiSeconds = 0;
+                _autoPressureSeconds = 0;
+                _autoRecoverySeconds = 0;
                 _autoAdjustCooldownSeconds = 0;
                 _autoPerformanceReductionActive = false;
                 _autoPerformanceRecoveryActive = false;
@@ -1246,8 +1318,6 @@ namespace PdfOverlayTool
             // preloading while memory is tight - that preloading is the main CPU hog.
             _memoryPressureActive = cacheOverThreshold || systemOverThreshold;
 
-            // After an adjustment, let things settle before measuring again so reductions
-            // (and their re-renders) don't stack up faster than they can take effect.
             if (_autoAdjustCooldownSeconds > 0)
             {
                 _autoAdjustCooldownSeconds--;
@@ -1257,27 +1327,16 @@ namespace PdfOverlayTool
             if (_memoryPressureActive)
             {
                 _autoPerformanceRecoveryActive = false;
-                _autoMemoryRecoverySeconds = 0;
-                _autoMemoryRecoveryDpiSeconds = 0;
+                _autoRecoverySeconds = 0;
 
-                if (GetCacheRadius() > 0)
+                if (_autoQualityLevel > 0)
                 {
-                    _autoMemorySevereExceededSeconds = 0;
-                    _autoMemoryExceededSeconds++;
+                    _autoPressureSeconds++;
 
-                    if (_autoMemoryExceededSeconds >= CACHE_ADJUST_DELAY_SECONDS)
+                    if (_autoPressureSeconds >= CACHE_ADJUST_DELAY_SECONDS)
                     {
-                        ReduceCachePageSize();
-                    }
-                }
-                else
-                {
-                    _autoMemoryExceededSeconds = 0;
-                    _autoMemorySevereExceededSeconds++;
-
-                    if (_autoMemorySevereExceededSeconds >= DPI_ADJUST_DELAY_SECONDS)
-                    {
-                        ReduceDpi();
+                        ApplyAutoQualityLevel(_autoQualityLevel - 1, isReduction: true);
+                        _autoPressureSeconds = 0;
                     }
                 }
 
@@ -1285,76 +1344,126 @@ namespace PdfOverlayTool
             }
             else
             {
-                _autoMemoryExceededSeconds = 0;
-                _autoMemorySevereExceededSeconds = 0;
+                _autoPressureSeconds = 0;
                 _autoPerformanceReductionActive = false;
 
                 if (TryGetMemoryRecoveryState(out bool canRecover)
                     && canRecover
-                    && IsAutoSettingsBelowDefaults())
+                    && _autoQualityLevel < MaxAutoQualityLevel)
                 {
                     _autoPerformanceRecoveryActive = true;
+                    _autoRecoverySeconds++;
 
-                    // Recovery: cache to 1, then DPI to default, then cache to default.
-                    if (GetCacheRadius() < MIN_AUTO_RECOVERY_PAGE_CACHE)
+                    if (_autoRecoverySeconds >= CACHE_ADJUST_DELAY_SECONDS)
                     {
-                        _autoMemoryRecoveryDpiSeconds = 0;
-                        _autoMemoryRecoverySeconds++;
-
-                        if (_autoMemoryRecoverySeconds >= CACHE_ADJUST_DELAY_SECONDS)
-                        {
-                            IncreaseCachePageSize(MIN_AUTO_RECOVERY_PAGE_CACHE);
-                        }
-                    }
-                    else if (DpiSlider != null && DpiSlider.Value < DEFAULT_AUTO_DPI)
-                    {
-                        _autoMemoryRecoverySeconds = 0;
-                        _autoMemoryRecoveryDpiSeconds++;
-
-                        if (_autoMemoryRecoveryDpiSeconds >= DPI_ADJUST_DELAY_SECONDS)
-                        {
-                            IncreaseDpi();
-                        }
-                    }
-                    else if (GetCacheRadius() < DEFAULT_AUTO_PAGE_CACHE)
-                    {
-                        _autoMemoryRecoveryDpiSeconds = 0;
-                        _autoMemoryRecoverySeconds++;
-
-                        if (_autoMemoryRecoverySeconds >= CACHE_ADJUST_DELAY_SECONDS)
-                        {
-                            IncreaseCachePageSize(DEFAULT_AUTO_PAGE_CACHE);
-                        }
-                    }
-                    else
-                    {
-                        _autoPerformanceRecoveryActive = false;
-                        _autoMemoryRecoverySeconds = 0;
-                        _autoMemoryRecoveryDpiSeconds = 0;
+                        ApplyAutoQualityLevel(_autoQualityLevel + 1, isReduction: false);
+                        _autoRecoverySeconds = 0;
                     }
                 }
                 else
                 {
                     _autoPerformanceRecoveryActive = false;
-                    _autoMemoryRecoverySeconds = 0;
-                    _autoMemoryRecoveryDpiSeconds = 0;
+                    _autoRecoverySeconds = 0;
                 }
 
                 UpdateAutoModeButtonAppearance();
             }
         }
 
-        private bool IsAutoSettingsBelowDefaults()
+        private void SyncAutoQualityLevelFromSliders()
         {
-            double currentDpi = DpiSlider?.Value ?? DEFAULT_AUTO_DPI;
-            return GetCacheRadius() < DEFAULT_AUTO_PAGE_CACHE || currentDpi < DEFAULT_AUTO_DPI;
+            _autoQualityLevel = DeriveAutoQualityLevelFromSliders();
+        }
+
+        private int DeriveAutoQualityLevelFromSliders()
+        {
+            double cache = CacheSizeSlider?.Value ?? AutoQualityLevels[MaxAutoQualityLevel].Cache;
+            double dpi = DpiSlider?.Value ?? AutoQualityLevels[MaxAutoQualityLevel].Dpi;
+
+            for (int level = 0; level <= MaxAutoQualityLevel; level++)
+            {
+                if (Math.Abs(cache - AutoQualityLevels[level].Cache) < 0.5
+                    && Math.Abs(dpi - AutoQualityLevels[level].Dpi) < 0.5)
+                {
+                    return level;
+                }
+            }
+
+            // Non-table values (e.g. after MANUAL): highest level whose targets are still met.
+            for (int level = MaxAutoQualityLevel; level >= 0; level--)
+            {
+                if (cache >= AutoQualityLevels[level].Cache - 0.5
+                    && dpi >= AutoQualityLevels[level].Dpi - 0.5)
+                {
+                    return level;
+                }
+            }
+
+            return 0;
+        }
+
+        private void ApplyAutoQualityLevel(int level, bool isReduction)
+        {
+            level = Math.Clamp(level, 0, MaxAutoQualityLevel);
+
+            if (level == _autoQualityLevel
+                && CacheSizeSlider != null
+                && DpiSlider != null
+                && Math.Abs(CacheSizeSlider.Value - AutoQualityLevels[level].Cache) < 0.5
+                && Math.Abs(DpiSlider.Value - AutoQualityLevels[level].Dpi) < 0.5)
+            {
+                return;
+            }
+
+            _autoQualityLevel = level;
+            (double cache, double dpi) = AutoQualityLevels[level];
+
+            _isRestoringSettings = true;
+            try
+            {
+                if (CacheSizeSlider != null)
+                {
+                    CacheSizeSlider.Value = cache;
+                }
+
+                if (DpiSlider != null)
+                {
+                    DpiSlider.Value = dpi;
+                }
+            }
+            finally
+            {
+                _isRestoringSettings = false;
+            }
+
+            ApplyMemorySettings(invalidateRenders: true);
+            SaveUserSettings();
+
+            if (isReduction)
+            {
+                _autoPerformanceReductionActive = true;
+                _sessionTelemetry.RecordAutoMemoryReductionEngaged();
+                SetStatus(LOW_MEMORY_MESSAGE, isError: true);
+            }
+            else
+            {
+                _autoPerformanceRecoveryActive = level < MaxAutoQualityLevel;
+                if (level < MaxAutoQualityLevel)
+                {
+                    _sessionTelemetry.RecordAutoMemoryRecoveryEngaged();
+                    SetStatus(RECOVERY_MESSAGE);
+                }
+            }
+
+            _autoAdjustCooldownSeconds = AUTO_ADJUST_COOLDOWN_SECONDS;
+            UpdateAutoModeButtonAppearance();
         }
 
         private bool TryGetMemoryRecoveryState(out bool canRecover)
         {
             canRecover = false;
 
-            long estimatedBytes = GetEstimatedCacheBytes();
+            long estimatedBytes = GetTotalAppCacheBytes();
 
             if (!TryGetTotalSystemMemoryBytes(out long totalSystemMemoryBytes) || totalSystemMemoryBytes <= 0)
             {
@@ -1379,7 +1488,7 @@ namespace PdfOverlayTool
             cacheOverThreshold = false;
             systemOverThreshold = false;
 
-            long estimatedBytes = GetEstimatedCacheBytes();
+            long estimatedBytes = GetTotalAppCacheBytes();
 
             if (TryGetTotalSystemMemoryBytes(out long totalSystemMemoryBytes) && totalSystemMemoryBytes > 0)
             {
@@ -1390,96 +1499,6 @@ namespace PdfOverlayTool
             systemOverThreshold = TryGetSystemMemoryLoadPercent(out double systemMemoryLoadPercent)
                 && systemMemoryLoadPercent > SYSTEM_MEMORY_LOAD_THRESHOLD;
             return true;
-        }
-
-        private void ReduceCachePageSize()
-        {
-            if (CacheSizeSlider == null)
-            {
-                return;
-            }
-
-            double newCacheRadius = Math.Max(CacheSizeSlider.Minimum, CacheSizeSlider.Value - 1);
-            if (newCacheRadius == CacheSizeSlider.Value)
-            {
-                return;
-            }
-
-            // Assigning the slider value raises ValueChanged, which applies the new setting.
-            CacheSizeSlider.Value = newCacheRadius;
-            _autoPerformanceReductionActive = true;
-            _sessionTelemetry.RecordAutoMemoryReductionEngaged();
-            UpdateAutoModeButtonAppearance();
-            SetStatus(LOW_MEMORY_MESSAGE, isError: true);
-            _autoMemoryExceededSeconds = 0;
-            _autoAdjustCooldownSeconds = AUTO_ADJUST_COOLDOWN_SECONDS;
-        }
-
-        private void ReduceDpi()
-        {
-            if (DpiSlider == null)
-            {
-                return;
-            }
-
-            double newDpi = Math.Max(MIN_AUTO_DPI, DpiSlider.Value - DPI_REDUCE_STEP);
-            if (newDpi == DpiSlider.Value)
-            {
-                return;
-            }
-
-            // Assigning the slider value raises ValueChanged, which applies the new setting.
-            DpiSlider.Value = newDpi;
-            _autoPerformanceReductionActive = true;
-            _sessionTelemetry.RecordAutoMemoryReductionEngaged();
-            UpdateAutoModeButtonAppearance();
-            SetStatus(LOW_MEMORY_MESSAGE, isError: true);
-            _autoMemorySevereExceededSeconds = 0;
-            _autoAdjustCooldownSeconds = AUTO_ADJUST_COOLDOWN_SECONDS;
-        }
-
-        private void IncreaseCachePageSize(double maxCacheRadius)
-        {
-            if (CacheSizeSlider == null)
-            {
-                return;
-            }
-
-            double newCacheRadius = Math.Min(maxCacheRadius, CacheSizeSlider.Value + 1);
-            if (newCacheRadius == CacheSizeSlider.Value)
-            {
-                return;
-            }
-
-            CacheSizeSlider.Value = newCacheRadius;
-            _autoPerformanceRecoveryActive = true;
-            _sessionTelemetry.RecordAutoMemoryRecoveryEngaged();
-            UpdateAutoModeButtonAppearance();
-            SetStatus(RECOVERY_MESSAGE);
-            _autoMemoryRecoverySeconds = 0;
-            _autoAdjustCooldownSeconds = AUTO_ADJUST_COOLDOWN_SECONDS;
-        }
-
-        private void IncreaseDpi()
-        {
-            if (DpiSlider == null)
-            {
-                return;
-            }
-
-            double newDpi = Math.Min(DEFAULT_AUTO_DPI, DpiSlider.Value + DPI_INCREASE_STEP);
-            if (newDpi == DpiSlider.Value)
-            {
-                return;
-            }
-
-            DpiSlider.Value = newDpi;
-            _autoPerformanceRecoveryActive = true;
-            _sessionTelemetry.RecordAutoMemoryRecoveryEngaged();
-            UpdateAutoModeButtonAppearance();
-            SetStatus(RECOVERY_MESSAGE);
-            _autoMemoryRecoveryDpiSeconds = 0;
-            _autoAdjustCooldownSeconds = AUTO_ADJUST_COOLDOWN_SECONDS;
         }
 
         private void MemoryControl_ValueChanged(object sender, RoutedPropertyChangedEventArgs<double> e)
@@ -1532,7 +1551,18 @@ namespace PdfOverlayTool
                 return;
             }
 
-            selectedDpi = (int)DpiSlider.Value;
+            int newDpi = (int)DpiSlider.Value;
+
+            // Rendered bitmap dimensions scale with DPI; adjust zoom inversely so the page
+            // stays the same apparent size on screen instead of jumping when DPI changes.
+            if (invalidateRenders
+                && _renderDpiForCurrentDisplay > 0
+                && newDpi != _renderDpiForCurrentDisplay)
+            {
+                CompensateZoomForDpiChange(_renderDpiForCurrentDisplay, newDpi);
+            }
+
+            selectedDpi = newDpi;
             imageThreshold = (int)ImageThresholdSlider.Value;
             setOffset = CacheSizeSlider.Value;
 
@@ -1562,17 +1592,11 @@ namespace PdfOverlayTool
 
         private void ClearRenderCaches()
         {
-            lock (_pageCacheLock)
+            lock (_displayCacheLock)
             {
-                _pageCache.Clear();
+                _displayCache.Clear();
             }
 
-            lock (_tintCacheLock)
-            {
-                _tintCache.Clear();
-            }
-
-            // The running total only tracks these two caches, so it resets with them.
             Interlocked.Exchange(ref _estimatedCacheBytes, 0);
         }
 
@@ -1604,9 +1628,19 @@ namespace PdfOverlayTool
             AutoModeToggleButton.Background = (SolidColorBrush)FindResource("AutoNormalBrush");
         }
 
-        private long GetEstimatedCacheBytes()
+        private long GetEstimatedDisplayCacheBytes()
         {
             return Interlocked.Read(ref _estimatedCacheBytes);
+        }
+
+        private long GetEstimatedPdfCacheBytes()
+        {
+            return Interlocked.Read(ref _estimatedPdfCacheBytes);
+        }
+
+        private long GetTotalAppCacheBytes()
+        {
+            return GetEstimatedDisplayCacheBytes() + GetEstimatedPdfCacheBytes();
         }
 
         private void UpdateMemoryUsageDisplay()
@@ -1622,8 +1656,21 @@ namespace PdfOverlayTool
                 return;
             }
 
-            long estimatedBytes = GetEstimatedCacheBytes();
+            long estimatedBytes = GetTotalAppCacheBytes();
             _sessionTelemetry.RecordCacheBytes(estimatedBytes);
+
+            long displayBytes = GetEstimatedDisplayCacheBytes();
+            long pdfBytes = GetEstimatedPdfCacheBytes();
+            double displayMegabytes = displayBytes / (1024.0 * 1024.0);
+            double pdfMegabytes = pdfBytes / (1024.0 * 1024.0);
+            double totalMegabytes = estimatedBytes / (1024.0 * 1024.0);
+
+            string memoryToolTip =
+                $"App cache: {totalMegabytes:0.0} MB total "
+                + $"(bitmap {displayMegabytes:0.0} MB + PDF {pdfMegabytes:0.0} MB). "
+                + "First value is app cache vs system RAM; second is overall system memory load. "
+                + "Red values indicate high usage.";
+            MemoryUsageTextBlock.ToolTip = memoryToolTip;
 
             if (TryGetTotalSystemMemoryBytes(out long totalSystemMemoryBytes) && totalSystemMemoryBytes > 0)
             {
@@ -1635,22 +1682,23 @@ namespace PdfOverlayTool
 
                 MemoryUsageTextBlock.Inlines.Clear();
                 MemoryUsageTextBlock.Inlines.Add(new Run("Mem: "));
-                MemoryUsageTextBlock.Inlines.Add(new Run($"{cachePercentOfSystemMemory:0.0}%")
+                MemoryUsageTextBlock.Inlines.Add(new Run($"{cachePercentOfSystemMemory:0}%")
                 {
                     Foreground = cacheOverThreshold ? Brushes.Red : MemoryUsageTextBlock.Foreground
                 });
+                MemoryUsageTextBlock.Inlines.Add(new Run($" ({totalMegabytes:0.0} MB)"));
                 MemoryUsageTextBlock.Inlines.Add(new Run("/"));
-                MemoryUsageTextBlock.Inlines.Add(new Run($"{systemMemoryLoadPercent:0.0}%")
+                MemoryUsageTextBlock.Inlines.Add(new Run($"{systemMemoryLoadPercent:0}%")
                 {
                     Foreground = systemOverThreshold ? Brushes.Red : MemoryUsageTextBlock.Foreground
                 });
             }
             else
             {
-                double megabytes = estimatedBytes / (1024.0 * 1024.0);
                 MemoryUsageTextBlock.Inlines.Clear();
                 MemoryUsageTextBlock.Inlines.Add(new Run("Mem: "));
-                MemoryUsageTextBlock.Inlines.Add(new Run($"{megabytes:0.0} MB"));
+                MemoryUsageTextBlock.Inlines.Add(new Run($"{totalMegabytes:0.0} MB"));
+                MemoryUsageTextBlock.Inlines.Add(new Run($" ({displayMegabytes:0.0}+{pdfMegabytes:0.0})"));
                 MemoryUsageTextBlock.Inlines.Add(new Run("/"));
                 MemoryUsageTextBlock.Inlines.Add(new Run("--%"));
             }
@@ -1776,13 +1824,6 @@ namespace PdfOverlayTool
             SetStatus($"Overlay rotated to {RotateAngleText?.Text}.");
         }
 
-        private void RotateCcw_Click(object sender, RoutedEventArgs e)
-        {
-            _overlayQuarterTurns = (_overlayQuarterTurns + 3) % 4;
-            ApplyOverlayRotation();
-            SetStatus($"Overlay rotated to {RotateAngleText?.Text}.");
-        }
-
         private void ResetOverlay_Click(object sender, RoutedEventArgs e)
         {
             OpacitySlider.Value = 50;
@@ -1853,7 +1894,25 @@ namespace PdfOverlayTool
 
         private void ViewerScrollViewer_PreviewMouseWheel(object sender, MouseWheelEventArgs e)
         {
-            if (!Keyboard.IsKeyDown(Key.LeftCtrl) && !Keyboard.IsKeyDown(Key.RightCtrl))
+            bool ctrlDown = Keyboard.IsKeyDown(Key.LeftCtrl) || Keyboard.IsKeyDown(Key.RightCtrl);
+            bool altDown = Keyboard.IsKeyDown(Key.LeftAlt) || Keyboard.IsKeyDown(Key.RightAlt);
+
+            if (ctrlDown && altDown)
+            {
+                if (ScaleSlider == null || string.IsNullOrWhiteSpace(_overlayPane?.FilePath))
+                {
+                    return;
+                }
+
+                e.Handled = true;
+
+                double direction = e.Delta > 0 ? 1.0 : -1.0;
+                double newScale = ScaleSlider.Value + (direction * SCALE_WHEEL_STEP);
+                ScaleSlider.Value = Math.Clamp(newScale, ScaleSlider.Minimum, ScaleSlider.Maximum);
+                return;
+            }
+
+            if (!ctrlDown)
             {
                 return;
             }
@@ -1925,12 +1984,23 @@ namespace PdfOverlayTool
             if (viewportWidth <= 0 || viewportHeight <= 0)
                 return;
 
-            // Get content size (unscaled)
-            if (BaseImage.Source == null)
+            // Size to whichever document is loaded (base when present, otherwise overlay-only).
+            double contentWidth;
+            double contentHeight;
+            if (BaseImage.Source is BitmapSource baseSource)
+            {
+                contentWidth = baseSource.Width;
+                contentHeight = baseSource.Height;
+            }
+            else if (OverlayImage.Source is BitmapSource overlaySource)
+            {
+                contentWidth = overlaySource.Width;
+                contentHeight = overlaySource.Height;
+            }
+            else
+            {
                 return;
-
-            double contentWidth = BaseImage.Source.Width;
-            double contentHeight = BaseImage.Source.Height;
+            }
 
             if (contentWidth <= 0 || contentHeight <= 0)
                 return;
@@ -2017,6 +2087,17 @@ namespace PdfOverlayTool
             {
                 FitToWindow_Click(this, new RoutedEventArgs());
             }), DispatcherPriority.Loaded);
+        }
+
+        private void CompensateZoomForDpiChange(int oldDpi, int newDpi)
+        {
+            if (oldDpi <= 0 || newDpi <= 0 || oldDpi == newDpi)
+            {
+                return;
+            }
+
+            _zoom *= oldDpi / (double)newDpi;
+            _zoom = Math.Clamp(_zoom, ZOOM_MIN, ZOOM_MAX);
         }
 
         private void ApplyCurrentZoomDeferred()
@@ -2276,39 +2357,49 @@ namespace PdfOverlayTool
         }
 
         // Cache probe only - never renders. Lets LoadPage take a synchronous fast path
-        // for pages that are already rendered.
-        private BitmapSource? TryGetRenderedPage(string filePath, int pageIndex)
+        // for pages that are already rendered for display.
+        private BitmapSource? TryGetCachedDisplayBitmap(string filePath, int pageIndex, string role)
         {
-            lock (_pageCacheLock)
+            lock (_displayCacheLock)
             {
-                return _pageCache.TryGetValue((filePath, pageIndex), out BitmapSource? cached)
+                return _displayCache.TryGetValue((filePath, pageIndex, role), out BitmapSource? cached)
                     ? cached
                     : null;
             }
         }
 
-        private BitmapSource GetCachedPage(string filePath, int pageIndex)
+        /// <summary>
+        /// Returns the bitmap shown in the viewer: tinted when tint is on, plain otherwise.
+        /// Only that form is cached — untinted intermediates are not retained.
+        /// </summary>
+        private BitmapSource GetDisplayBitmap(
+            string filePath,
+            int pageIndex,
+            string role,
+            Color tintColor,
+            bool useTint)
         {
-            var key = (filePath, pageIndex);
+            var cacheKey = (filePath, pageIndex, role);
 
-            lock (_pageCacheLock)
+            lock (_displayCacheLock)
             {
-                if (_pageCache.TryGetValue(key, out BitmapSource? cached) && cached != null)
+                if (_displayCache.TryGetValue(cacheKey, out BitmapSource? cached) && cached != null)
                 {
                     return cached;
                 }
             }
 
-            // Per-page gate: when an on-demand load and a preload race for the same page,
-            // the second caller waits for the first render instead of duplicating it.
+            var renderKey = (filePath, pageIndex);
+
             object renderGate;
             lock (_renderGatesLock)
             {
-                if (!_renderGates.TryGetValue(key, out object? existingGate))
+                if (!_renderGates.TryGetValue(renderKey, out object? existingGate))
                 {
                     existingGate = new object();
-                    _renderGates[key] = existingGate;
+                    _renderGates[renderKey] = existingGate;
                 }
+
                 renderGate = existingGate;
             }
 
@@ -2316,75 +2407,36 @@ namespace PdfOverlayTool
             {
                 lock (renderGate)
                 {
-                    lock (_pageCacheLock)
+                    lock (_displayCacheLock)
                     {
-                        if (_pageCache.TryGetValue(key, out BitmapSource? cached) && cached != null)
+                        if (_displayCache.TryGetValue(cacheKey, out BitmapSource? cached) && cached != null)
                         {
                             return cached;
                         }
                     }
 
-                    BitmapSource image = LoadFileAsBitmapSource(filePath, pageIndex);
+                    BitmapSource rendered = LoadFileAsBitmapSource(filePath, pageIndex);
+                    BitmapSource display = useTint
+                        ? CreateTintedImage(rendered, tintColor)
+                        : rendered;
 
-                    lock (_pageCacheLock)
+                    lock (_displayCacheLock)
                     {
-                        _pageCache[key] = image;
+                        _displayCache[cacheKey] = display;
                     }
 
-                    Interlocked.Add(ref _estimatedCacheBytes, EstimateBitmapBytes(image));
+                    Interlocked.Add(ref _estimatedCacheBytes, EstimateBitmapBytes(display));
                     UpdateMemoryUsageDisplay();
-                    return image;
+                    return display;
                 }
             }
             finally
             {
                 lock (_renderGatesLock)
                 {
-                    _renderGates.Remove(key);
+                    _renderGates.Remove(renderKey);
                 }
             }
-        }
-
-        private BitmapSource GetCachedTintedPage(
-                                                    string filePath,
-                                                    int pageIndex,
-                                                    BitmapSource source,
-                                                    string role,
-                                                    Color tintColor)
-        {
-            var key = (filePath, pageIndex, role);
-
-            lock (_tintCacheLock)
-            {
-                if (_tintCache.TryGetValue(key, out BitmapSource? cached) && cached != null)
-                {
-                    return cached;
-                }
-            }
-
-            BitmapSource tinted = CreateTintedImage(source, tintColor);
-
-            bool inserted = false;
-            BitmapSource result;
-
-            lock (_tintCacheLock)
-            {
-                if (!_tintCache.ContainsKey(key))
-                {
-                    _tintCache[key] = tinted;
-                    inserted = true;
-                }
-
-                result = _tintCache[key];
-            }
-
-            if (inserted)
-            {
-                Interlocked.Add(ref _estimatedCacheBytes, EstimateBitmapBytes(tinted));
-            }
-
-            UpdateMemoryUsageDisplay();
-            return result;
         }
 
         private int GetCacheRadius()
@@ -2410,14 +2462,17 @@ namespace PdfOverlayTool
                 if (!_pdfCache.ContainsKey(filePath))
                 {
                     _pdfCache[filePath] = pdfBytes;
+                    Interlocked.Add(ref _estimatedPdfCacheBytes, pdfBytes.Length);
+                    UpdateMemoryUsageDisplay();
                 }
 
                 return _pdfCache[filePath];
             }
         }
 
-        private void PreloadAdjacentPages(DocumentPane pane, string filePath, int currentPageIndex, bool useTint)
+        private void PreloadAdjacentPages(DocumentPane pane, string filePath, int currentPageIndex)
         {
+            bool useTint = TintImagesCheckBox?.IsChecked == true;
             // Under AUTO memory pressure, skip speculative preloading entirely. It is the
             // main source of re-render churn that fights the UI for CPU; pages still render
             // on demand when the user actually navigates to them.
@@ -2453,12 +2508,7 @@ namespace PdfOverlayTool
                         // PREVIOUS PAGE
                         if (prev >= 0)
                         {
-                            BitmapSource prevImage = GetCachedPage(filePath, prev);
-
-                            if (useTint)
-                            {
-                                GetCachedTintedPage(filePath, prev, prevImage, role, tintColor);
-                            }
+                            GetDisplayBitmap(filePath, prev, role, tintColor, useTint);
                         }
 
                         if (token.IsCancellationRequested)
@@ -2469,12 +2519,7 @@ namespace PdfOverlayTool
                         // NEXT PAGE
                         if (!pageCount.HasValue || next < pageCount.Value)
                         {
-                            BitmapSource nextImage = GetCachedPage(filePath, next);
-
-                            if (useTint)
-                            {
-                                GetCachedTintedPage(filePath, next, nextImage, role, tintColor);
-                            }
+                            GetDisplayBitmap(filePath, next, role, tintColor, useTint);
                         }
                     }
                 }
@@ -2495,9 +2540,9 @@ namespace PdfOverlayTool
 
             long removedBytes = 0;
 
-            lock (_pageCacheLock)
+            lock (_displayCacheLock)
             {
-                var keysToRemove = _pageCache.Keys
+                var keysToRemove = _displayCache.Keys
                     .Where(k =>
                         k.path == filePath &&
                         Math.Abs(k.page - currentPageIndex) > cacheRadius)
@@ -2505,24 +2550,8 @@ namespace PdfOverlayTool
 
                 foreach (var key in keysToRemove)
                 {
-                    removedBytes += EstimateBitmapBytes(_pageCache[key]);
-                    _pageCache.Remove(key);
-                }
-            }
-
-            // Also prune tint cache
-            lock (_tintCacheLock)
-            {
-                var tintKeysToRemove = _tintCache.Keys
-                    .Where(k =>
-                        k.path == filePath &&
-                        Math.Abs(k.page - currentPageIndex) > cacheRadius)
-                    .ToList();
-
-                foreach (var key in tintKeysToRemove)
-                {
-                    removedBytes += EstimateBitmapBytes(_tintCache[key]);
-                    _tintCache.Remove(key);
+                    removedBytes += EstimateBitmapBytes(_displayCache[key]);
+                    _displayCache.Remove(key);
                 }
             }
 
@@ -2622,29 +2651,16 @@ namespace PdfOverlayTool
 
             long removedBytes = 0;
 
-            lock (_pageCacheLock)
+            lock (_displayCacheLock)
             {
-                var pageKeysToRemove = _pageCache.Keys
+                var keysToRemove = _displayCache.Keys
                     .Where(k => k.path.Equals(filePath, StringComparison.OrdinalIgnoreCase))
                     .ToList();
 
-                foreach (var key in pageKeysToRemove)
+                foreach (var key in keysToRemove)
                 {
-                    removedBytes += EstimateBitmapBytes(_pageCache[key]);
-                    _pageCache.Remove(key);
-                }
-            }
-
-            lock (_tintCacheLock)
-            {
-                var tintKeysToRemove = _tintCache.Keys
-                    .Where(k => k.path.Equals(filePath, StringComparison.OrdinalIgnoreCase))
-                    .ToList();
-
-                foreach (var key in tintKeysToRemove)
-                {
-                    removedBytes += EstimateBitmapBytes(_tintCache[key]);
-                    _tintCache.Remove(key);
+                    removedBytes += EstimateBitmapBytes(_displayCache[key]);
+                    _displayCache.Remove(key);
                 }
             }
 
@@ -2652,8 +2668,14 @@ namespace PdfOverlayTool
 
             lock (_pdfCacheLock)
             {
-                _pdfCache.Remove(filePath);
+                if (_pdfCache.TryGetValue(filePath, out byte[]? cachedPdfBytes) && cachedPdfBytes != null)
+                {
+                    Interlocked.Add(ref _estimatedPdfCacheBytes, -cachedPdfBytes.Length);
+                    _pdfCache.Remove(filePath);
+                }
             }
+
+            UpdateMemoryUsageDisplay();
         }
 
         /// <summary>
@@ -2695,7 +2717,6 @@ namespace PdfOverlayTool
 
             public string? FilePath { get; set; }
             public int? PageCount { get; set; }
-            public BitmapSource? OriginalImage { get; set; }
 
             /// <summary>
             /// Incremented by each LoadPage call (UI thread only); background renders

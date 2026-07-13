@@ -13,12 +13,13 @@ namespace PdfOverlayTool
 
         public static string ResolveWebAppUrl()
         {
-            if (!string.IsNullOrWhiteSpace(WebAppUrl))
+            string fromFile = TelemetrySettings.Load().WebAppUrl.Trim();
+            if (!string.IsNullOrWhiteSpace(fromFile))
             {
-                return WebAppUrl.Trim();
+                return fromFile;
             }
 
-            return TelemetrySettings.Load().WebAppUrl.Trim();
+            return WebAppUrl.Trim();
         }
     }
 }

@@ -1,3 +1,4 @@
+using System.ComponentModel;
 using System.Windows;
 
 namespace PdfOverlayTool
@@ -13,8 +14,18 @@ namespace PdfOverlayTool
         public RegistrationWindow()
         {
             InitializeComponent();
+            ColorPalette.ApplyDialogTheme(this, ColorPalette.CurrentSelection);
             TitleTextBlock.Text = $"Welcome to Overlay Compare Tool {BetaConfig.VersionNumber}";
             TermsTextBlock.Text = BetaTerms.Body;
+            Closing += RegistrationWindow_Closing;
+        }
+
+        private void RegistrationWindow_Closing(object? sender, CancelEventArgs e)
+        {
+            if (DialogResult != true)
+            {
+                Application.Current.Shutdown();
+            }
         }
 
         private void AcceptTermsCheckBox_Changed(object sender, RoutedEventArgs e)

@@ -98,6 +98,7 @@ namespace PdfOverlayTool
                 settings.TermsVersion ?? "",
                 settings.TermsAcceptedUtc ?? "",
                 snapshot,
+                ColorPalette.ParseSettings(settings.ColorPaletteMode, settings.ColorBlindFriendly),
                 exception,
                 origin,
                 isTerminating);

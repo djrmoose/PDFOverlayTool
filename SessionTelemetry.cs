@@ -22,7 +22,12 @@ namespace PdfOverlayTool
         }
 
         private readonly object _lock = new();
-        private readonly List<FileOpenRecord> _fileOpens = new();
+
+        private int _filesOpenedCount;
+        private double _totalFileSizeMegabytes;
+        private long _totalFilePageCount;
+        private double _maxFileSizeMegabytes;
+        private int _maxFilePageCount;
 
         private int _helpClickCount;
         private bool _autoMemoryReductionEngaged;
@@ -34,7 +39,11 @@ namespace PdfOverlayTool
         {
             lock (_lock)
             {
-                _fileOpens.Clear();
+                _filesOpenedCount = 0;
+                _totalFileSizeMegabytes = 0;
+                _totalFilePageCount = 0;
+                _maxFileSizeMegabytes = 0;
+                _maxFilePageCount = 0;
                 _helpClickCount = 0;
                 _autoMemoryReductionEngaged = false;
                 _autoMemoryRecoveryEngaged = false;
@@ -84,17 +93,23 @@ namespace PdfOverlayTool
             }
         }
 
-        public void RecordFileOpen(string role, double sizeMegabytes, int pageCount, bool isDemo)
+        public void RecordFileOpen(double sizeMegabytes, int pageCount)
         {
             lock (_lock)
             {
-                _fileOpens.Add(new FileOpenRecord
+                _filesOpenedCount++;
+                _totalFileSizeMegabytes += sizeMegabytes;
+                _totalFilePageCount += pageCount;
+
+                if (sizeMegabytes > _maxFileSizeMegabytes)
                 {
-                    Role = role,
-                    SizeMegabytes = Math.Round(sizeMegabytes, 2),
-                    PageCount = pageCount,
-                    IsDemo = isDemo
-                });
+                    _maxFileSizeMegabytes = sizeMegabytes;
+                }
+
+                if (pageCount > _maxFilePageCount)
+                {
+                    _maxFilePageCount = pageCount;
+                }
             }
         }
 
@@ -129,11 +144,23 @@ namespace PdfOverlayTool
         {
             lock (_lock)
             {
+                double? avgFileSizeMegabytes = _filesOpenedCount > 0
+                    ? Math.Round(_totalFileSizeMegabytes / _filesOpenedCount, 2)
+                    : null;
+                double? avgFilePageCount = _filesOpenedCount > 0
+                    ? Math.Round(_totalFilePageCount / (double)_filesOpenedCount, 2)
+                    : null;
+
                 return new SessionCloseSnapshot
                 {
                     Settings = settings,
-                    FilesOpenedCount = _fileOpens.Count,
-                    FilesOpened = _fileOpens.Select(f => f.ToAnonymous()).ToList(),
+                    FilesOpenedCount = _filesOpenedCount,
+                    MaxFileSizeMegabytes = _filesOpenedCount > 0
+                        ? Math.Round(_maxFileSizeMegabytes, 2)
+                        : null,
+                    MaxFilePageCount = _filesOpenedCount > 0 ? _maxFilePageCount : null,
+                    AvgFileSizeMegabytes = avgFileSizeMegabytes,
+                    AvgFilePageCount = avgFilePageCount,
                     DemoStatus = _demoStatus.ToString(),
                     HelpClickCount = _helpClickCount,
                     AutoMemoryReductionEngaged = _autoMemoryReductionEngaged,
@@ -142,22 +169,6 @@ namespace PdfOverlayTool
                     MaxCacheMegabytes = Math.Round(_maxCacheMegabytes, 2)
                 };
             }
-        }
-
-        private sealed class FileOpenRecord
-        {
-            public string Role { get; set; } = "";
-            public double SizeMegabytes { get; set; }
-            public int PageCount { get; set; }
-            public bool IsDemo { get; set; }
-
-            public Dictionary<string, object?> ToAnonymous() => new()
-            {
-                ["role"] = Role,
-                ["sizeMb"] = SizeMegabytes,
-                ["pageCount"] = PageCount,
-                ["isDemo"] = IsDemo
-            };
         }
     }
 
@@ -171,13 +182,17 @@ namespace PdfOverlayTool
         public bool OverlayOnlyRevisions { get; set; }
         public bool TintEnabled { get; set; }
         public bool ColorBlindFriendly { get; set; }
+        public string ColorPaletteName { get; set; } = ColorPalette.StandardPaletteName;
     }
 
     public sealed class SessionCloseSnapshot
     {
         public SessionSettingsSnapshot Settings { get; set; } = new();
         public int FilesOpenedCount { get; set; }
-        public List<Dictionary<string, object?>> FilesOpened { get; set; } = new();
+        public double? MaxFileSizeMegabytes { get; set; }
+        public int? MaxFilePageCount { get; set; }
+        public double? AvgFileSizeMegabytes { get; set; }
+        public double? AvgFilePageCount { get; set; }
         public string DemoStatus { get; set; } = "";
         public int HelpClickCount { get; set; }
         public bool AutoMemoryReductionEngaged { get; set; }

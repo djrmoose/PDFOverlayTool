@@ -36,13 +36,13 @@
                            Grid.Row="0"
                            FontSize="18"
                            FontWeight="SemiBold"
-                           Foreground="{StaticResource AccentBrush}"
+                           Foreground="{DynamicResource AccentBrush}"
                            TextWrapping="Wrap"
                            Margin="0,0,0,8"/>
 
                 <TextBlock Grid.Row="1"
                            FontSize="13"
-                           Foreground="{StaticResource BodyBrush}"
+                           Foreground="{DynamicResource BodyBrush}"
                            TextWrapping="Wrap"
                            LineHeight="20"
                            Margin="0,0,0,12"
@@ -53,7 +53,7 @@
                            xmlns:local="clr-namespace:PdfOverlayTool"
                            FontSize="14"
                            FontWeight="SemiBold"
-                           Foreground="{StaticResource TextBrush}"
+                           Foreground="{DynamicResource TextBrush}"
                            Margin="0,0,0,6"/>
 
                 <Border Grid.Row="3"
@@ -66,7 +66,7 @@
                                       Padding="10">
                                 <TextBlock x:Name="TermsTextBlock"
                                            FontSize="12"
-                                           Foreground="{StaticResource BodyBrush}"
+                                           Foreground="{DynamicResource BodyBrush}"
                                            TextWrapping="Wrap"
                                            LineHeight="18"/>
                         </ScrollViewer>
@@ -75,14 +75,14 @@
                 <CheckBox x:Name="AcceptTermsCheckBox"
                           Grid.Row="4"
                           Margin="0,0,0,14"
-                          Foreground="{StaticResource TextBrush}"
+                          Foreground="{DynamicResource TextBrush}"
                           Content="I have read and accept the Beta Terms of Use, including automatic usage reporting."
                           Checked="AcceptTermsCheckBox_Changed"
                           Unchecked="AcceptTermsCheckBox_Changed"/>
 
                 <TextBlock Grid.Row="5"
                            Text="Name"
-                           Foreground="{StaticResource TextBrush}"
+                           Foreground="{DynamicResource TextBrush}"
                            Margin="0,0,0,4"/>
 
                 <TextBox x:Name="NameTextBox"
@@ -93,7 +93,7 @@
 
                 <TextBlock Grid.Row="7"
                            Text="Email"
-                           Foreground="{StaticResource TextBrush}"
+                           Foreground="{DynamicResource TextBrush}"
                            Margin="0,0,0,4"/>
 
                 <TextBox x:Name="EmailTextBox"

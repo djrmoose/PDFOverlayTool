@@ -29,13 +29,13 @@
                            Text="BETA Demonstration"
                            FontSize="20"
                            FontWeight="SemiBold"
-                           Foreground="{StaticResource AccentBrush}"
+                           Foreground="{DynamicResource AccentBrush}"
                            Margin="0,0,0,12"/>
 
                 <TextBlock x:Name="BodyTextBlock"
                            Grid.Row="1"
                            FontSize="14"
-                           Foreground="{StaticResource BodyBrush}"
+                           Foreground="{DynamicResource BodyBrush}"
                            TextWrapping="Wrap"
                            LineHeight="22"
                            Margin="0,0,0,20"/>

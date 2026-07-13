@@ -10,6 +10,7 @@ namespace PdfOverlayTool
         public SplashWindow(bool fileLoadingDisabled)
         {
             InitializeComponent();
+            ColorPalette.ApplyDialogTheme(this, ColorPalette.CurrentSelection);
 
             if (fileLoadingDisabled)
             {
@@ -20,7 +21,7 @@ namespace PdfOverlayTool
                 BodyTextBlock.Inlines.Add(new Run(
                     "The Overlay Compare Tool " + BetaConfig.VersionNumber + " demonstration period has expired. " +
                     "Only DEMO mode is available.\n\n" +
-                    "To request the an updated version or provide feedback, contact the developer at "));
+                    "To request an updated version or provide feedback, contact the developer at "));
                 var link = new Hyperlink(new Run(BetaConfig.DeveloperEmail))
                 {
                     NavigateUri = new Uri($"mailto:{BetaConfig.DeveloperEmail}?subject=Overlay%20Compare%20Tool%20Feedback")

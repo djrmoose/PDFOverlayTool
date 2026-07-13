@@ -14,6 +14,7 @@ namespace PdfOverlayTool
         public double Sensitivity { get; set; } = 200;
         public bool OverlayOnlyRevisions { get; set; }
         public bool IsAutoMode { get; set; } = true;
+        public string ColorPaletteMode { get; set; } = ColorPalette.StandardPaletteName;
         public bool ColorBlindFriendly { get; set; }
         public int LastWeeklyReminderWeekKey { get; set; }
 
@@ -28,6 +29,7 @@ namespace PdfOverlayTool
                 Sensitivity = 200,
                 OverlayOnlyRevisions = false,
                 IsAutoMode = true,
+                ColorPaletteMode = ColorPalette.StandardPaletteName,
                 ColorBlindFriendly = false
             };
         }

@@ -9,6 +9,7 @@ namespace PdfOverlayTool
         public HelpWindow()
         {
             InitializeComponent();
+            ColorPalette.ApplyDialogTheme(this, ColorPalette.CurrentSelection);
         }
 
         private void FeedbackEmailLink_RequestNavigate(object sender, RequestNavigateEventArgs e)
