@@ -133,6 +133,7 @@ namespace PdfOverlayTool
         private bool _termsAccepted;
         private string _termsVersion = "";
         private string _termsAcceptedUtc = "";
+        private bool _demoIntroCompleted;
         private DateTime _sessionStartUtc;
 
         private readonly SessionTelemetry _sessionTelemetry = new();
@@ -185,29 +186,63 @@ namespace PdfOverlayTool
                 SendSessionTelemetryIfNeeded();
             };
 
-            Loaded += (s, e) =>
+            Loaded += (_, _) => PlayStartupLogoFlash(ContinueStartupAfterLogo);
+
+        }
+
+        private void ContinueStartupAfterLogo()
+        {
+            ShowRegistrationIfNeeded();
+            ShowDemoIntroIfNeeded();
+            ShowBetaSplashIfNeeded();
+            ApplyBetaFileLoadingMode();
+            UpdatePageInputState();
+            UpdatePageNavigationButtons();
+            UpdateOverlayNavigationButtons();
+            ApplyOverlaySettings();
+            UpdateMemoryUsageDisplay();
+            SetAutoManualMode(_isAutoMode);
+
+            if (BetaConfig.IsFileLoadingDisabled)
             {
-                ShowRegistrationIfNeeded();
-                ShowBetaSplashIfNeeded();
-                ApplyBetaFileLoadingMode();
-                UpdatePageInputState();
-                UpdatePageNavigationButtons();
-                UpdateOverlayNavigationButtons();
-                ApplyOverlaySettings();
-                UpdateMemoryUsageDisplay();
-                SetAutoManualMode(_isAutoMode);
+                LoadDemoFiles();
+            }
+            else
+            {
+                SetStatus("Load a base PDF and/or overlay PDF to begin.");
+            }
 
-                if (BetaConfig.IsFileLoadingDisabled)
-                {
-                    LoadDemoFiles();
-                }
-                else
-                {
-                    SetStatus("Load a base PDF and/or overlay PDF to begin.");
-                }
+            RecordSessionStart();
+        }
 
-                RecordSessionStart();
+        private void PlayStartupLogoFlash(Action onComplete)
+        {
+            if (StartupLogoOverlay == null)
+            {
+                onComplete();
+                return;
+            }
+
+            StartupLogoOverlay.Visibility = Visibility.Visible;
+            StartupLogoOverlay.Opacity = 1;
+
+            var storyboard = new Storyboard();
+
+            var fadeOut = new DoubleAnimation(1, 0, TimeSpan.FromMilliseconds(1750))
+            {
+                BeginTime = TimeSpan.FromMilliseconds(750),
+                EasingFunction = new QuadraticEase { EasingMode = EasingMode.EaseIn }
             };
+            Storyboard.SetTarget(fadeOut, StartupLogoOverlay);
+            Storyboard.SetTargetProperty(fadeOut, new PropertyPath(UIElement.OpacityProperty));
+
+            storyboard.Children.Add(fadeOut);
+            storyboard.Completed += (_, _) =>
+            {
+                StartupLogoOverlay.Visibility = Visibility.Collapsed;
+                onComplete();
+            };
+            storyboard.Begin();
         }
 
         private void ShowRegistrationIfNeeded()
@@ -327,6 +362,36 @@ namespace PdfOverlayTool
                 Owner = this
             };
             splash.ShowDialog();
+        }
+
+        private void ShowDemoIntroIfNeeded()
+        {
+            if (_demoIntroCompleted || !_registrationComplete)
+            {
+                return;
+            }
+
+            _demoIntroCompleted = true;
+            SaveUserSettings();
+
+            var offer = new DemoOfferWindow
+            {
+                Owner = this
+            };
+
+            offer.ShowDialog();
+
+            if (offer.ShowDemo)
+            {
+                StartDemoWalkthrough();
+                return;
+            }
+
+            var reminder = new DemoReminderWindow
+            {
+                Owner = this
+            };
+            reminder.ShowDialog();
         }
 
         private bool ShouldShowCloseFeedback()
@@ -1234,6 +1299,7 @@ namespace PdfOverlayTool
                 _termsAccepted = settings.TermsAccepted;
                 _termsVersion = settings.TermsVersion ?? "";
                 _termsAcceptedUtc = settings.TermsAcceptedUtc ?? "";
+                _demoIntroCompleted = settings.DemoIntroCompleted;
             }
             finally
             {
@@ -1276,7 +1342,8 @@ namespace PdfOverlayTool
                 InstallId = _installId,
                 TermsAccepted = _termsAccepted,
                 TermsVersion = _termsVersion,
-                TermsAcceptedUtc = _termsAcceptedUtc
+                TermsAcceptedUtc = _termsAcceptedUtc,
+                DemoIntroCompleted = _demoIntroCompleted
             };
 
             settings.Save();

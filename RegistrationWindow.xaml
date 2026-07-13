@@ -30,6 +30,8 @@
                         <RowDefinition Height="Auto"/>
                         <RowDefinition Height="Auto"/>
                         <RowDefinition Height="Auto"/>
+                        <RowDefinition Height="Auto"/>
+                        <RowDefinition Height="Auto"/>
                 </Grid.RowDefinitions>
 
                 <TextBlock x:Name="TitleTextBlock"
@@ -38,9 +40,16 @@
                            FontWeight="SemiBold"
                            Foreground="{DynamicResource AccentBrush}"
                            TextWrapping="Wrap"
-                           Margin="0,0,0,8"/>
+                           Margin="0,0,0,4"/>
 
                 <TextBlock Grid.Row="1"
+                           Text="Brought to you by © Bluemoose"
+                           FontSize="13"
+                           FontStyle="Italic"
+                           Foreground="{DynamicResource BodyBrush}"
+                           Margin="0,0,0,8"/>
+
+                <TextBlock Grid.Row="2"
                            FontSize="13"
                            Foreground="{DynamicResource BodyBrush}"
                            TextWrapping="Wrap"
@@ -48,7 +57,7 @@
                            Margin="0,0,0,12"
                            Text="Please enter your name and email for beta support. Anonymous usage data (settings, session activity, and file statistics without file names) is sent automatically as described in the terms below."/>
 
-                <TextBlock Grid.Row="2"
+                <TextBlock Grid.Row="3"
                            Text="{x:Static local:BetaTerms.Title}"
                            xmlns:local="clr-namespace:PdfOverlayTool"
                            FontSize="14"
@@ -56,12 +65,12 @@
                            Foreground="{DynamicResource TextBrush}"
                            Margin="0,0,0,6"/>
 
-                <Border Grid.Row="3"
+                <Border Grid.Row="4"
                         BorderBrush="#CCCCCC"
                         BorderThickness="1"
                         Background="White"
                         Margin="0,0,0,12"
-                        MaxHeight="220">
+                        MaxHeight="260">
                         <ScrollViewer VerticalScrollBarVisibility="Auto"
                                       Padding="10">
                                 <TextBlock x:Name="TermsTextBlock"
@@ -73,44 +82,44 @@
                 </Border>
 
                 <CheckBox x:Name="AcceptTermsCheckBox"
-                          Grid.Row="4"
+                          Grid.Row="5"
                           Margin="0,0,0,14"
                           Foreground="{DynamicResource TextBrush}"
-                          Content="I have read and accept the Beta Terms of Use, including automatic usage reporting."
+                          Content="I have read and accept the © Bluemoose Beta Terms of Use, including automatic usage reporting."
                           Checked="AcceptTermsCheckBox_Changed"
                           Unchecked="AcceptTermsCheckBox_Changed"/>
 
-                <TextBlock Grid.Row="5"
+                <TextBlock Grid.Row="6"
                            Text="Name"
                            Foreground="{DynamicResource TextBrush}"
                            Margin="0,0,0,4"/>
 
                 <TextBox x:Name="NameTextBox"
-                         Grid.Row="6"
+                         Grid.Row="7"
                          Margin="0,0,0,12"
                          Padding="6,4"
                          FontSize="13"/>
 
-                <TextBlock Grid.Row="7"
+                <TextBlock Grid.Row="8"
                            Text="Email"
                            Foreground="{DynamicResource TextBrush}"
                            Margin="0,0,0,4"/>
 
                 <TextBox x:Name="EmailTextBox"
-                         Grid.Row="8"
+                         Grid.Row="9"
                          Margin="0,0,0,8"
                          Padding="6,4"
                          FontSize="13"/>
 
                 <TextBlock x:Name="ValidationTextBlock"
-                           Grid.Row="9"
+                           Grid.Row="10"
                            Foreground="Red"
                            FontSize="12"
                            TextWrapping="Wrap"
                            Visibility="Collapsed"
                            Margin="0,0,0,12"/>
 
-                <StackPanel Grid.Row="10"
+                <StackPanel Grid.Row="11"
                             Orientation="Horizontal"
                             HorizontalAlignment="Right">
                         <Button x:Name="ContinueButton"

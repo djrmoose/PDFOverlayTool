@@ -78,15 +78,32 @@
                                 <TextBlock Style="{StaticResource HelpText}" Text="&#8226; Opacity, DPI, Page Cache, Sensitivity, Revs Only, color palette, and AUTO/MANUAL mode are saved automatically and restored the next time you open the app."/>
 
                                 <TextBlock Text="About" Style="{StaticResource SectionHeader}"/>
-                                <TextBlock Style="{StaticResource HelpText}" Text="Overlay Compare Tool &#8212; a WPF utility for visually comparing drawing and document revisions."/>
+                                <StackPanel Orientation="Horizontal"
+                                            Margin="0,0,0,8">
+                                        <Image Source="/Resources/Bluemoose.png"
+                                               Height="36"
+                                               Stretch="Uniform"
+                                               Margin="0,0,12,0"
+                                               VerticalAlignment="Top"
+                                               ToolTip="© Bluemoose"/>
+                                        <StackPanel VerticalAlignment="Center">
+                                                <TextBlock Style="{StaticResource HelpText}"
+                                                           FontWeight="SemiBold"
+                                                           Text="© Bluemoose™"/>
+                                                <TextBlock Style="{StaticResource HelpText}"
+                                                           Text="Overlay Compare Tool — visually compare drawing and document revisions."/>
+                                                <TextBlock Style="{StaticResource HelpText}"
+                                                           Margin="0,4,0,0"
+                                                           Text="© 2026 Bluemoose™. All rights reserved."/>
+                                        </StackPanel>
+                                </StackPanel>
                                 <TextBlock Style="{StaticResource HelpText}" Text="Rendering: PDFtoImage / SkiaSharp."/>
-                                <TextBlock Style="{StaticResource HelpText}" Margin="0,8,0,0">
+                                <TextBlock Style="{StaticResource HelpText}" Margin="0,8,0,16">
                                         <Run Text="Feature requests and bug reports are welcome. Contact the developer at "/>
                                         <Hyperlink NavigateUri="mailto:djrmoose@gmail.com?subject=Overlay%20Compare%20Tool%20Feedback"
                                                    RequestNavigate="FeedbackEmailLink_RequestNavigate">djrmoose@gmail.com</Hyperlink>
                                         <Run Text="."/>
                                 </TextBlock>
-                                <TextBlock Style="{StaticResource HelpText}" Margin="0,8,0,16" Text="&#169; Bluemoose"/>
                         </StackPanel>
                 </ScrollViewer>
 

@@ -17,6 +17,7 @@
 
   <ItemGroup>
   <Resource Include="Resources\OCT.ico" />
+  <Resource Include="Resources\Bluemoose.png" />
 </ItemGroup>
 
   <ItemGroup>

@@ -14,7 +14,7 @@ namespace PdfOverlayTool
         public double Sensitivity { get; set; } = 200;
         public bool OverlayOnlyRevisions { get; set; }
         public bool IsAutoMode { get; set; } = true;
-        public string ColorPaletteMode { get; set; } = ColorPalette.StandardPaletteName;
+        public string ColorPaletteMode { get; set; } = ColorPalette.BlueGreyPaletteName;
         public bool ColorBlindFriendly { get; set; }
         public int LastWeeklyReminderWeekKey { get; set; }
         public int LastWeeklyFeedbackWeekKey { get; set; }
@@ -30,7 +30,7 @@ namespace PdfOverlayTool
                 Sensitivity = 200,
                 OverlayOnlyRevisions = false,
                 IsAutoMode = true,
-                ColorPaletteMode = ColorPalette.StandardPaletteName,
+                ColorPaletteMode = ColorPalette.BlueGreyPaletteName,
                 ColorBlindFriendly = false
             };
         }
@@ -41,6 +41,7 @@ namespace PdfOverlayTool
         public bool TermsAccepted { get; set; }
         public string TermsVersion { get; set; } = "";
         public string TermsAcceptedUtc { get; set; } = "";
+        public bool DemoIntroCompleted { get; set; }
 
         private static string SettingsDirectory =>
             Path.Combine(

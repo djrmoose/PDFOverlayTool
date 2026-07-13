@@ -952,5 +952,18 @@
                                            Margin="20,0,20,0"/>
                         </Grid>
                 </Border>
+
+                <Border x:Name="StartupLogoOverlay"
+                        Grid.RowSpan="4"
+                        Panel.ZIndex="1000"
+                        Visibility="Visible"
+                        Opacity="0"
+                        Background="{DynamicResource ToolbarBackgroundBrush}">
+                        <Image Source="/Resources/Bluemoose.png"
+                               Height="220"
+                               Stretch="Uniform"
+                               HorizontalAlignment="Center"
+                               VerticalAlignment="Center"/>
+                </Border>
         </Grid>
 </Window>

@@ -12,7 +12,10 @@ namespace PdfOverlayTool
 
         public SettingsWindow(ColorPaletteSelection selection)
         {
+            _suppressPaletteEvents = true;
             InitializeComponent();
+            _suppressPaletteEvents = false;
+
             ApplyPreview(selection);
             SelectPalette(selection, notify: false);
         }
@@ -59,19 +62,31 @@ namespace PdfOverlayTool
 
         private ColorPaletteSelection GetSelectedPalette()
         {
-            AppTheme theme = BlueGreyThemeRadio.IsChecked == true
+            AppTheme theme = BlueGreyThemeRadio?.IsChecked == true
                 ? AppTheme.BlueGrey
                 : AppTheme.Standard;
 
-            return new ColorPaletteSelection(theme, ColorBlindFriendlyCheckBox.IsChecked == true);
+            return new ColorPaletteSelection(theme, ColorBlindFriendlyCheckBox?.IsChecked == true);
         }
 
         private void SelectPalette(ColorPaletteSelection selection, bool notify)
         {
             _suppressPaletteEvents = true;
-            StandardThemeRadio.IsChecked = selection.Theme == AppTheme.Standard;
-            BlueGreyThemeRadio.IsChecked = selection.Theme == AppTheme.BlueGrey;
-            ColorBlindFriendlyCheckBox.IsChecked = selection.ColorBlindFriendly;
+            if (StandardThemeRadio != null)
+            {
+                StandardThemeRadio.IsChecked = selection.Theme == AppTheme.Standard;
+            }
+
+            if (BlueGreyThemeRadio != null)
+            {
+                BlueGreyThemeRadio.IsChecked = selection.Theme == AppTheme.BlueGrey;
+            }
+
+            if (ColorBlindFriendlyCheckBox != null)
+            {
+                ColorBlindFriendlyCheckBox.IsChecked = selection.ColorBlindFriendly;
+            }
+
             _suppressPaletteEvents = false;
 
             if (notify)

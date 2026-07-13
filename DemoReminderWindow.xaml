@@ -1,0 +1,50 @@
+<Window x:Class="PdfOverlayTool.DemoReminderWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="Demo Tour"
+        Icon="/Resources/OCT.ico"
+        Width="440"
+        Height="Auto"
+        SizeToContent="Height"
+        MinWidth="380"
+        WindowStartupLocation="CenterOwner"
+        ResizeMode="NoResize"
+        Background="#F0F0F0">
+
+        <Window.Resources>
+                <SolidColorBrush x:Key="AccentBrush" Color="#7A5230"/>
+                <SolidColorBrush x:Key="TextBrush" Color="#3A2E24"/>
+                <SolidColorBrush x:Key="HelpTextBrush" Color="#4A3F35"/>
+        </Window.Resources>
+
+        <Grid Margin="24">
+                <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto"/>
+                        <RowDefinition Height="Auto"/>
+                        <RowDefinition Height="Auto"/>
+                </Grid.RowDefinitions>
+
+                <TextBlock Grid.Row="0"
+                           Text="Demo available anytime"
+                           FontSize="18"
+                           FontWeight="SemiBold"
+                           Foreground="{DynamicResource AccentBrush}"
+                           TextWrapping="Wrap"
+                           Margin="0,0,0,8"/>
+
+                <TextBlock Grid.Row="1"
+                           FontSize="13"
+                           Foreground="{DynamicResource HelpTextBrush}"
+                           TextWrapping="Wrap"
+                           LineHeight="20"
+                           Margin="0,0,0,20"
+                           Text="If you want to explore all the features later, open Help and click Demo Tour. It loads the sample files and guides you through the main tools step by step."/>
+
+                <Button Grid.Row="2"
+                        Content="OK"
+                        Width="90"
+                        HorizontalAlignment="Right"
+                        IsDefault="True"
+                        IsCancel="True"/>
+        </Grid>
+</Window>

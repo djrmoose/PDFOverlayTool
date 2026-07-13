@@ -205,7 +205,7 @@ namespace PdfOverlayTool
         public bool OverlayOnlyRevisions { get; set; }
         public bool TintEnabled { get; set; }
         public bool ColorBlindFriendly { get; set; }
-        public string ColorPaletteName { get; set; } = ColorPalette.StandardPaletteName;
+        public string ColorPaletteName { get; set; } = ColorPalette.BlueGreyPaletteName;
     }
 
     public sealed class SessionCloseSnapshot

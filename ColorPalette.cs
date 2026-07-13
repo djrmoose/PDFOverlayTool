@@ -14,7 +14,7 @@ namespace PdfOverlayTool
     /// </summary>
     public readonly record struct ColorPaletteSelection(AppTheme Theme, bool ColorBlindFriendly)
     {
-        public static ColorPaletteSelection Default => new(AppTheme.Standard, false);
+        public static ColorPaletteSelection Default => new(AppTheme.BlueGrey, false);
     }
 
     /// <summary>

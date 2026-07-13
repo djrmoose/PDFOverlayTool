@@ -59,13 +59,13 @@
                            Margin="0,0,0,8"/>
 
                 <StackPanel Grid.Row="2" Margin="0,0,0,4">
-                        <RadioButton x:Name="StandardThemeRadio"
-                                     GroupName="AppTheme"
-                                     Content="Standard — warm brown controls"
-                                     Checked="PaletteOption_Changed"/>
                         <RadioButton x:Name="BlueGreyThemeRadio"
                                      GroupName="AppTheme"
                                      Content="Blue / grey — cool blue and grey controls"
+                                     Checked="PaletteOption_Changed"/>
+                        <RadioButton x:Name="StandardThemeRadio"
+                                     GroupName="AppTheme"
+                                     Content="Standard — warm brown controls"
                                      Checked="PaletteOption_Changed"/>
                 </StackPanel>
 
