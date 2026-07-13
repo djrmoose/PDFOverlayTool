@@ -34,6 +34,10 @@ namespace PdfOverlayTool
         private bool _autoMemoryRecoveryEngaged;
         private double _maxCacheMegabytes;
         private DemoStatus _demoStatus = DemoStatus.NotApplicable;
+        private bool _closeFeedbackPromptShown;
+        private bool _closeFeedbackSkipped;
+        private string? _closeFeedbackRating;
+        private string? _closeFeedbackText;
 
         public void Reset()
         {
@@ -49,6 +53,10 @@ namespace PdfOverlayTool
                 _autoMemoryRecoveryEngaged = false;
                 _maxCacheMegabytes = 0;
                 _demoStatus = DemoStatus.NotApplicable;
+                _closeFeedbackPromptShown = false;
+                _closeFeedbackSkipped = false;
+                _closeFeedbackRating = null;
+                _closeFeedbackText = null;
             }
         }
 
@@ -131,12 +139,23 @@ namespace PdfOverlayTool
             }
         }
 
-        /// <summary>Future: user dismissed the interactive demo tour.</summary>
+        /// <summary>User dismissed the interactive demo tour.</summary>
         public void RecordDemoSkipped()
         {
             lock (_lock)
             {
                 _demoStatus = DemoStatus.Skipped;
+            }
+        }
+
+        public void RecordCloseFeedback(bool skipped, string? rating, string? feedbackText)
+        {
+            lock (_lock)
+            {
+                _closeFeedbackPromptShown = true;
+                _closeFeedbackSkipped = skipped;
+                _closeFeedbackRating = rating;
+                _closeFeedbackText = feedbackText;
             }
         }
 
@@ -166,7 +185,11 @@ namespace PdfOverlayTool
                     AutoMemoryReductionEngaged = _autoMemoryReductionEngaged,
                     AutoMemoryRecoveryEngaged = _autoMemoryRecoveryEngaged,
                     AutoMemoryManagementEngaged = _autoMemoryReductionEngaged || _autoMemoryRecoveryEngaged,
-                    MaxCacheMegabytes = Math.Round(_maxCacheMegabytes, 2)
+                    MaxCacheMegabytes = Math.Round(_maxCacheMegabytes, 2),
+                    CloseFeedbackPromptShown = _closeFeedbackPromptShown,
+                    CloseFeedbackSkipped = _closeFeedbackSkipped,
+                    CloseFeedbackRating = _closeFeedbackRating,
+                    CloseFeedbackText = _closeFeedbackText
                 };
             }
         }
@@ -199,5 +222,9 @@ namespace PdfOverlayTool
         public bool AutoMemoryRecoveryEngaged { get; set; }
         public bool AutoMemoryManagementEngaged { get; set; }
         public double MaxCacheMegabytes { get; set; }
+        public bool CloseFeedbackPromptShown { get; set; }
+        public bool CloseFeedbackSkipped { get; set; }
+        public string? CloseFeedbackRating { get; set; }
+        public string? CloseFeedbackText { get; set; }
     }
 }

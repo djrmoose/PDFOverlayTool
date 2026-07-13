@@ -17,6 +17,7 @@ namespace PdfOverlayTool
         public string ColorPaletteMode { get; set; } = ColorPalette.StandardPaletteName;
         public bool ColorBlindFriendly { get; set; }
         public int LastWeeklyReminderWeekKey { get; set; }
+        public int LastWeeklyFeedbackWeekKey { get; set; }
 
         /// <summary>Default values for user preferences (excludes registration and install identity).</summary>
         public static UserSettings CreatePreferenceDefaults()

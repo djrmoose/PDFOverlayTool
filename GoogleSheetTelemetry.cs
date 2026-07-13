@@ -247,6 +247,10 @@ namespace PdfOverlayTool
             details["autoMemoryRecoveryEngaged"] = snapshot.AutoMemoryRecoveryEngaged;
             details["autoMemoryManagementEngaged"] = snapshot.AutoMemoryManagementEngaged;
             details["maxCacheMb"] = snapshot.MaxCacheMegabytes;
+            details["closeFeedbackPromptShown"] = snapshot.CloseFeedbackPromptShown;
+            details["closeFeedbackSkipped"] = snapshot.CloseFeedbackSkipped;
+            details["closeFeedbackRating"] = snapshot.CloseFeedbackRating;
+            details["closeFeedbackText"] = snapshot.CloseFeedbackText;
 
             return details;
         }

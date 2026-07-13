@@ -67,7 +67,9 @@
 
                                 <TextBlock Text="Viewing" Style="{StaticResource SectionHeader}"/>
                                 <TextBlock Style="{StaticResource HelpText}" Text="&#8226; Ctrl + mouse wheel zooms. Ctrl + drag pans the view."/>
+                                <TextBlock Style="{StaticResource HelpText}" Text="&#8226; Ctrl + Alt + mouse wheel adjusts overlay scale."/>
                                 <TextBlock Style="{StaticResource HelpText}" Text="&#8226; Fit to Window sizes the current page to the viewer."/>
+                                <TextBlock Style="{StaticResource HelpText}" Text="&#8226; Demo Tour (button below) loads the sample PDFs and walks through the main features step by step."/>
 
                                 <TextBlock Text="Performance (AUTO / MANUAL)" Style="{StaticResource SectionHeader}"/>
                                 <TextBlock Style="{StaticResource HelpText}" Text="&#8226; AUTO is the default. The top row shows the current DPI and Page Cache readout (no sliders). Under memory pressure, AUTO steps down through linked quality levels about every 2 seconds: Page Cache lowers first while DPI stays at 250 (5&#8594;4&#8594;3), then cache and DPI drop together (2/225, 1/200), and the last descent splits into cache to zero at 200 DPI, then DPI to 150. The AUTO button turns amber while reducing and green while restoring one level at a time when memory has headroom."/>
@@ -93,11 +95,18 @@
                         Padding="12,10"
                         BorderBrush="{DynamicResource PanelBorderBrush}"
                         BorderThickness="0,1,0,0">
-                        <Button Content="Close"
-                                Width="90"
-                                HorizontalAlignment="Right"
-                                IsCancel="True"
-                                IsDefault="True"/>
+                        <StackPanel Orientation="Horizontal"
+                                    HorizontalAlignment="Right">
+                                <Button Content="Demo Tour"
+                                        Width="100"
+                                        Margin="0,0,8,0"
+                                        ToolTip="Load the sample PDFs and walk through the main features."
+                                        Click="DemoTourButton_Click"/>
+                                <Button Content="Close"
+                                        Width="90"
+                                        IsCancel="True"
+                                        IsDefault="True"/>
+                        </StackPanel>
                 </Border>
         </Grid>
 </Window>

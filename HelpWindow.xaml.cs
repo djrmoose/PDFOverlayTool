@@ -6,6 +6,8 @@ namespace PdfOverlayTool
 {
     public partial class HelpWindow : Window
     {
+        public bool DemoTourRequested { get; private set; }
+
         public HelpWindow()
         {
             InitializeComponent();
@@ -16,6 +18,12 @@ namespace PdfOverlayTool
         {
             Process.Start(new ProcessStartInfo(e.Uri.AbsoluteUri) { UseShellExecute = true });
             e.Handled = true;
+        }
+
+        private void DemoTourButton_Click(object sender, RoutedEventArgs e)
+        {
+            DemoTourRequested = true;
+            Close();
         }
     }
 }

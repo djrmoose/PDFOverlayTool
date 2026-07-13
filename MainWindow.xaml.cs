@@ -123,6 +123,8 @@ namespace PdfOverlayTool
         private bool _isRestoringSettings;
         private bool _settingsReady;
         private int _lastWeeklyReminderWeekKey;
+        private int _lastWeeklyFeedbackWeekKey;
+        private bool _isFinalClose;
         private bool _registrationComplete;
         private string _userName = "";
         private string _userEmail = "";
@@ -158,8 +160,27 @@ namespace PdfOverlayTool
             UseFilteredOverlayPickerCheckbox.IsEnabled = false;
             InitializeAutoMemoryAdjustmentTimer();
 
-            Closing += (_, _) =>
+            Closing += (_, e) =>
             {
+                if (_isFinalClose)
+                {
+                    SaveUserSettings();
+                    SendSessionTelemetryIfNeeded();
+                    return;
+                }
+
+                if (ShouldShowCloseFeedback())
+                {
+                    e.Cancel = true;
+                    Dispatcher.BeginInvoke(() =>
+                    {
+                        ShowCloseFeedbackIfNeeded();
+                        _isFinalClose = true;
+                        Close();
+                    }, DispatcherPriority.ApplicationIdle);
+                    return;
+                }
+
                 SaveUserSettings();
                 SendSessionTelemetryIfNeeded();
             };
@@ -308,6 +329,41 @@ namespace PdfOverlayTool
             splash.ShowDialog();
         }
 
+        private bool ShouldShowCloseFeedback()
+        {
+            if (!_registrationComplete || TelemetryContext.CrashReported)
+            {
+                return false;
+            }
+
+            if (BetaConfig.IsFileLoadingDisabled)
+            {
+                return true;
+            }
+
+            return _lastWeeklyFeedbackWeekKey != BetaConfig.GetCurrentWeekKey();
+        }
+
+        private void ShowCloseFeedbackIfNeeded()
+        {
+            if (!BetaConfig.IsFileLoadingDisabled)
+            {
+                _lastWeeklyFeedbackWeekKey = BetaConfig.GetCurrentWeekKey();
+            }
+
+            var feedbackWindow = new FeedbackWindow
+            {
+                Owner = this
+            };
+
+            feedbackWindow.ShowDialog();
+
+            _sessionTelemetry.RecordCloseFeedback(
+                feedbackWindow.WasSkipped,
+                feedbackWindow.Rating,
+                feedbackWindow.FeedbackText);
+        }
+
         private void ApplyBetaFileLoadingMode()
         {
             bool fileLoadingDisabled = BetaConfig.IsFileLoadingDisabled;
@@ -380,28 +436,13 @@ namespace PdfOverlayTool
                 return;
             }
 
-            string baseDemoPath = GetDemoFilePath("Demo_Rev A.pdf");
-            string overlayDemoPath = GetDemoFilePath("Demo_Rev B.pdf");
+            LoadDemoFilesForTour();
 
-            bool baseLoaded = File.Exists(baseDemoPath);
-            bool overlayLoaded = File.Exists(overlayDemoPath);
-
-            if (baseLoaded)
-            {
-                LoadFileIntoPane(_basePane, baseDemoPath);
-            }
-
-            if (overlayLoaded)
-            {
-                LoadFileIntoPane(_overlayPane, overlayDemoPath);
-            }
-
-            if (baseLoaded || overlayLoaded)
+            if (!string.IsNullOrWhiteSpace(_basePane?.FilePath) || !string.IsNullOrWhiteSpace(_overlayPane?.FilePath))
             {
                 _sessionTelemetry.RecordDemoAutoLoaded();
             }
-
-            if (!baseLoaded && !overlayLoaded)
+            else
             {
                 SetStatus("Demonstration files could not be found.");
             }
@@ -959,6 +1000,11 @@ namespace PdfOverlayTool
             _sessionTelemetry.RecordHelpOpened();
             var helpWindow = new HelpWindow { Owner = this };
             helpWindow.ShowDialog();
+
+            if (helpWindow.DemoTourRequested)
+            {
+                StartDemoWalkthrough();
+            }
         }
 
         private void SettingsButton_Click(object sender, RoutedEventArgs e)
@@ -1170,6 +1216,7 @@ namespace PdfOverlayTool
                 _isAutoMode = settings.IsAutoMode;
                 _colorPaletteSelection = ColorPalette.ParseSettings(settings.ColorPaletteMode, settings.ColorBlindFriendly);
                 _lastWeeklyReminderWeekKey = settings.LastWeeklyReminderWeekKey;
+                _lastWeeklyFeedbackWeekKey = settings.LastWeeklyFeedbackWeekKey;
                 _registrationComplete = settings.RegistrationComplete;
                 _userName = settings.UserName ?? "";
                 _userEmail = settings.UserEmail ?? "";
@@ -1222,6 +1269,7 @@ namespace PdfOverlayTool
                 ColorPaletteMode = ColorPalette.GetThemeName(_colorPaletteSelection.Theme),
                 ColorBlindFriendly = _colorPaletteSelection.ColorBlindFriendly,
                 LastWeeklyReminderWeekKey = _lastWeeklyReminderWeekKey,
+                LastWeeklyFeedbackWeekKey = _lastWeeklyFeedbackWeekKey,
                 RegistrationComplete = _registrationComplete,
                 UserName = _userName,
                 UserEmail = _userEmail,
