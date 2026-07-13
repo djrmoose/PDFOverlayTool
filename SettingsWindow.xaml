@@ -32,10 +32,20 @@
                         <Setter Property="Foreground" Value="{DynamicResource TextBrush}"/>
                         <Setter Property="Margin" Value="0,8,0,0"/>
                 </Style>
+                <Style TargetType="TextBox">
+                        <Setter Property="Background" Value="{DynamicResource ControlBackgroundBrush}"/>
+                        <Setter Property="BorderBrush" Value="{DynamicResource PanelBorderBrush}"/>
+                        <Setter Property="Foreground" Value="{DynamicResource TextBrush}"/>
+                        <Setter Property="Padding" Value="6,4"/>
+                        <Setter Property="FontSize" Value="13"/>
+                </Style>
         </Window.Resources>
 
         <Grid Margin="24">
                 <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto"/>
+                        <RowDefinition Height="Auto"/>
+                        <RowDefinition Height="Auto"/>
                         <RowDefinition Height="Auto"/>
                         <RowDefinition Height="Auto"/>
                         <RowDefinition Height="Auto"/>
@@ -81,10 +91,31 @@
                            Foreground="{DynamicResource HelpTextBrush}"
                            TextWrapping="Wrap"
                            LineHeight="20"
-                           Margin="0,8,0,20"
+                           Margin="0,8,0,16"
                            Text="The theme applies to the main window, toolbars, buttons, sliders, status bar, and dialogs. Document overlays use green and red by default; enable color-blind friendly comparison colors for blue and orange overlays instead."/>
 
-                <StackPanel Grid.Row="5"
+                <TextBlock Grid.Row="5"
+                           Text="Revision separator"
+                           FontSize="15"
+                           FontWeight="SemiBold"
+                           Foreground="{DynamicResource AccentBrush}"
+                           Margin="0,0,0,8"/>
+
+                <TextBox x:Name="RevisionSeparatorTextBox"
+                         Grid.Row="6"
+                         MaxLength="32"
+                         ToolTip="Text that separates the base file name from the revision label when Revs Only filters the overlay picker. Default: _ (for names like Drawing_Rev A.pdf)."
+                         TextChanged="RevisionSeparatorTextBox_TextChanged"/>
+
+                <TextBlock Grid.Row="7"
+                           FontSize="13"
+                           Foreground="{DynamicResource HelpTextBrush}"
+                           TextWrapping="Wrap"
+                           LineHeight="20"
+                           Margin="0,8,0,20"
+                           Text="Used with Revs Only. The base file name is split at the first occurrence of this text; overlay files must share the same leading name. Example: separator _ matches Drawing_Rev A.pdf and Drawing_Rev B.pdf. Leave blank to use the full base file name."/>
+
+                <StackPanel Grid.Row="8"
                             Orientation="Horizontal"
                             HorizontalAlignment="Right">
                         <Button x:Name="ResetDefaultsButton"

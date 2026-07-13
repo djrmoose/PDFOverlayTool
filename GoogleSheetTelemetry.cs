@@ -231,6 +231,7 @@ namespace PdfOverlayTool
                 ["sensitivity"] = snapshot.Settings.Sensitivity,
                 ["isAutoMode"] = snapshot.Settings.IsAutoMode,
                 ["overlayOnlyRevisions"] = snapshot.Settings.OverlayOnlyRevisions,
+                ["revisionSeparator"] = snapshot.Settings.RevisionSeparator,
                 ["tintEnabled"] = snapshot.Settings.TintEnabled,
                 ["colorBlindFriendly"] = snapshot.Settings.ColorBlindFriendly,
                 ["colorPalette"] = snapshot.Settings.ColorPaletteName

@@ -134,6 +134,7 @@ namespace PdfOverlayTool
         private string _termsVersion = "";
         private string _termsAcceptedUtc = "";
         private bool _demoIntroCompleted;
+        private string _revisionSeparator = "_";
         private DateTime _sessionStartUtc;
 
         private readonly SessionTelemetry _sessionTelemetry = new();
@@ -325,6 +326,7 @@ namespace PdfOverlayTool
                 Sensitivity = ImageThresholdSlider?.Value ?? 200,
                 IsAutoMode = _isAutoMode,
                 OverlayOnlyRevisions = UseFilteredOverlayPickerCheckbox?.IsChecked == true,
+                RevisionSeparator = _revisionSeparator,
                 TintEnabled = TintImagesCheckBox?.IsChecked == true,
                 ColorBlindFriendly = _colorPaletteSelection.ColorBlindFriendly,
                 ColorPaletteName = ColorPalette.GetThemeName(_colorPaletteSelection.Theme)
@@ -659,11 +661,8 @@ namespace PdfOverlayTool
             {
                 UseFilteredOverlayPickerCheckbox.IsEnabled = true;
             }
-            else
-            {
-                // Scale/rotate pivot follows the viewer center; refresh when overlay content changes.
-                ApplyOverlayRotation();
-            }
+
+            ResetOverlayScaleAndRotation();
 
             if (fitToWindowOnLoad)
             {
@@ -1073,14 +1072,21 @@ namespace PdfOverlayTool
 
         private void SettingsButton_Click(object sender, RoutedEventArgs e)
         {
-            var settingsWindow = new SettingsWindow(_colorPaletteSelection)
+            var settingsWindow = new SettingsWindow(_colorPaletteSelection, _revisionSeparator)
             {
                 Owner = this
             };
 
             settingsWindow.PaletteChanged += SetColorPaletteSelection;
+            settingsWindow.RevisionSeparatorChanged += SetRevisionSeparator;
             settingsWindow.ResetDefaultsRequested += ResetPreferencesToDefaults;
             settingsWindow.ShowDialog();
+        }
+
+        private void SetRevisionSeparator(string separator)
+        {
+            _revisionSeparator = separator.Trim();
+            SaveUserSettings();
         }
 
         private void SetColorPaletteSelection(ColorPaletteSelection selection)
@@ -1127,6 +1133,8 @@ namespace PdfOverlayTool
                 {
                     UseFilteredOverlayPickerCheckbox.IsChecked = defaults.OverlayOnlyRevisions;
                 }
+
+                _revisionSeparator = defaults.RevisionSeparator;
 
                 if (TintImagesCheckBox != null)
                 {
@@ -1299,6 +1307,9 @@ namespace PdfOverlayTool
                 _termsVersion = settings.TermsVersion ?? "";
                 _termsAcceptedUtc = settings.TermsAcceptedUtc ?? "";
                 _demoIntroCompleted = settings.DemoIntroCompleted;
+                _revisionSeparator = string.IsNullOrEmpty(settings.RevisionSeparator)
+                    ? UserSettings.CreatePreferenceDefaults().RevisionSeparator
+                    : settings.RevisionSeparator;
             }
             finally
             {
@@ -1330,6 +1341,7 @@ namespace PdfOverlayTool
                 PageCache = CacheSizeSlider?.Value ?? 5,
                 Sensitivity = ImageThresholdSlider?.Value ?? 200,
                 OverlayOnlyRevisions = UseFilteredOverlayPickerCheckbox?.IsChecked == true,
+                RevisionSeparator = _revisionSeparator,
                 IsAutoMode = _isAutoMode,
                 ColorPaletteMode = ColorPalette.GetThemeName(_colorPaletteSelection.Theme),
                 ColorBlindFriendly = _colorPaletteSelection.ColorBlindFriendly,
@@ -1995,16 +2007,29 @@ namespace PdfOverlayTool
             SetStatus($"Overlay rotated to {RotateAngleText?.Text}.");
         }
 
+        private void ResetOverlayScaleAndRotation()
+        {
+            if (ScaleSlider != null)
+            {
+                ScaleSlider.Value = 100;
+            }
+
+            _overlayQuarterTurns = 0;
+
+            if (RotateFineSlider != null)
+            {
+                RotateFineSlider.Value = 0;
+            }
+
+            ApplyOverlaySettings();
+        }
+
         private void ResetOverlay_Click(object sender, RoutedEventArgs e)
         {
             OpacitySlider.Value = 50;
-            ScaleSlider.Value = 100;
             XOffsetSlider.Value = 0;
             YOffsetSlider.Value = 0;
-            _overlayQuarterTurns = 0;
-            RotateFineSlider.Value = 0;
-
-            ApplyOverlaySettings();
+            ResetOverlayScaleAndRotation();
 
             SetStatus("Overlay reset.");
         }
@@ -2404,7 +2429,7 @@ namespace PdfOverlayTool
                 (!pane.PageCount.HasValue || newPage <= pane.PageCount.Value))
             {
                 pane.PageTextBox.Text = newPage.ToString();
-                LoadPage(pane);
+                LoadPage(pane, fitToWindowOnLoad: true);
                 return true;
             }
 
@@ -2433,8 +2458,8 @@ namespace PdfOverlayTool
             // Prevent beep / extra processing
             e.Handled = true;
 
-            LoadPage(_basePane);
-            LoadPage(_overlayPane);
+            LoadPage(_basePane, fitToWindowOnLoad: true);
+            LoadPage(_overlayPane, fitToWindowOnLoad: true);
             UpdatePageNavigationButtons();
             UpdateOverlayNavigationButtons();
 
@@ -2736,7 +2761,14 @@ namespace PdfOverlayTool
                 return null;
 
             string name = Path.GetFileNameWithoutExtension(_basePane.FilePath);
-            int idx = name.IndexOf('_');
+            string separator = _revisionSeparator;
+
+            if (string.IsNullOrEmpty(separator))
+            {
+                return name;
+            }
+
+            int idx = name.IndexOf(separator, StringComparison.OrdinalIgnoreCase);
 
             return idx > 0 ? name.Substring(0, idx) : name;
         }
@@ -2772,7 +2804,8 @@ namespace PdfOverlayTool
 
             if (matchingFiles.Count == 0)
             {
-                MessageBox.Show($"No matching overlay files found for prefix '{basePrefix}_'.");
+                string separatorDisplay = string.IsNullOrEmpty(_revisionSeparator) ? "" : _revisionSeparator;
+                MessageBox.Show($"No matching overlay files found for prefix '{basePrefix}{separatorDisplay}'.");
                 return null;
             }
 

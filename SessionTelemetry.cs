@@ -227,6 +227,7 @@ namespace PdfOverlayTool
         public double Sensitivity { get; set; }
         public bool IsAutoMode { get; set; }
         public bool OverlayOnlyRevisions { get; set; }
+        public string RevisionSeparator { get; set; } = "_";
         public bool TintEnabled { get; set; }
         public bool ColorBlindFriendly { get; set; }
         public string ColorPaletteName { get; set; } = ColorPalette.BlueGreyPaletteName;

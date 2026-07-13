@@ -51,7 +51,7 @@
                                 <TextBlock Text="Loading Files" Style="{StaticResource SectionHeader}"/>
                                 <TextBlock Style="{StaticResource HelpText}" Text="&#8226; Use the Load Base / Load Overlay buttons, or drag a PDF or image file onto the viewer: the left half loads it as the base, the right half as the overlay."/>
                                 <TextBlock Style="{StaticResource HelpText}" Text="&#8226; Supported formats: PDF, PNG, JPG, BMP, TIFF."/>
-                                <TextBlock Style="{StaticResource HelpText}" Text="&#8226; Revs Only filters the overlay picker to files sharing the base file's name prefix."/>
+                                <TextBlock Style="{StaticResource HelpText}" Text="&#8226; Revs Only filters the overlay picker to files sharing the base file's name prefix (split at the revision separator in Settings; default _)."/>
 
                                 <TextBlock Text="Page Navigation" Style="{StaticResource SectionHeader}"/>
                                 <TextBlock Style="{StaticResource HelpText}" Text="&#8226; Left / Right arrow keys or the &lt; &gt; buttons page both documents together."/>
@@ -75,7 +75,7 @@
                                 <TextBlock Style="{StaticResource HelpText}" Text="&#8226; AUTO is the default. The top row shows the current DPI and Page Cache readout (no sliders). Under memory pressure, AUTO steps down through linked quality levels about every 2 seconds: Page Cache lowers first while DPI stays at 250 (5&#8594;4&#8594;3), then cache and DPI drop together (2/225, 1/200), and the last descent splits into cache to zero at 200 DPI, then DPI to 150. The AUTO button turns amber while reducing and green while restoring one level at a time when memory has headroom."/>
                                 <TextBlock Style="{StaticResource HelpText}" Text="&#8226; MANUAL mode exposes the DPI, Page Cache, and Sensitivity sliders directly. Higher DPI is sharper but uses more memory; Page Cache controls how many neighbouring pages are pre-rendered on each side of the current page; Sensitivity sets the black/white threshold when rendering PDFs."/>
                                 <TextBlock Style="{StaticResource HelpText}" Text="&#8226; Mem shows total app memory (bitmap cache plus loaded PDF bytes) as a percentage of system RAM and in megabytes, followed by overall system memory load. Red values indicate high usage. The bar at the bottom animates while pages are rendering."/>
-                                <TextBlock Style="{StaticResource HelpText}" Text="&#8226; Opacity, DPI, Page Cache, Sensitivity, Revs Only, color palette, and AUTO/MANUAL mode are saved automatically and restored the next time you open the app."/>
+                                <TextBlock Style="{StaticResource HelpText}" Text="&#8226; Opacity, DPI, Page Cache, Sensitivity, Revs Only, revision separator, color palette, and AUTO/MANUAL mode are saved automatically and restored the next time you open the app."/>
 
                                 <TextBlock Text="About" Style="{StaticResource SectionHeader}"/>
                                 <StackPanel Orientation="Horizontal"

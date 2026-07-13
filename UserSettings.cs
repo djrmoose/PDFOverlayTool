@@ -13,6 +13,7 @@ namespace PdfOverlayTool
         public double PageCache { get; set; } = 5;
         public double Sensitivity { get; set; } = 200;
         public bool OverlayOnlyRevisions { get; set; }
+        public string RevisionSeparator { get; set; } = "_";
         public bool IsAutoMode { get; set; } = true;
         public string ColorPaletteMode { get; set; } = ColorPalette.BlueGreyPaletteName;
         public bool ColorBlindFriendly { get; set; }
@@ -29,6 +30,7 @@ namespace PdfOverlayTool
                 PageCache = 5,
                 Sensitivity = 200,
                 OverlayOnlyRevisions = false,
+                RevisionSeparator = "_",
                 IsAutoMode = true,
                 ColorPaletteMode = ColorPalette.BlueGreyPaletteName,
                 ColorBlindFriendly = false

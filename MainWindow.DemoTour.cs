@@ -179,7 +179,7 @@ namespace PdfOverlayTool
                     + "Current memory use is indicated below the AUTO button: the first value is app cache as a percent of system RAM, "
                     + "the number in parentheses is total cache size in megabytes, and the value after the slash is overall system memory load. "
                     + "The AUTO button turns amber while reducing quality and green while restoring. "
-                    + "Switch to MANUAL to control DPI and Page Cache directly."),
+                    + "Click the AUTO button to switch to MANUAL to control DPI and Page Cache directly."),
 
                 new(
                     "Sensitivity",
@@ -205,8 +205,8 @@ namespace PdfOverlayTool
                     "Click Load Base and choose your file to open the base document.\n\n"
                     + "If you have a revision of the base image in the same folder, check Revs Only, then double-click on the revision you want to load. "
                     + "Revs Only filters the overlay list to files that share the base name up to the revision separator "
-                    + "(the underscore before the revision label, such as _Rev A and _Rev B). "
-                    + "The revision separator can be changed in Settings.\n\n"
+                    + "(default _, as in Drawing_Rev A.pdf and Drawing_Rev B.pdf). "
+                    + "Change the separator in Settings if your files use a different pattern.\n\n"
                     + "You can quickly load files from an open folder with drag and drop: drop a PDF or image on the left half of the viewer for the base, "
                     + "or on the right half for the overlay."),
 
