@@ -39,21 +39,6 @@ namespace PdfOverlayTool
 
         private void ResetDefaultsButton_Click(object sender, RoutedEventArgs e)
         {
-            MessageBoxResult result = MessageBox.Show(
-                this,
-                "Reset all saved preferences to their defaults?\n\n"
-                + "This restores opacity, performance sliders, AUTO mode, Revs Only, tint, and color palette. "
-                + "Registration and loaded files are not affected.",
-                "Reset Settings",
-                MessageBoxButton.YesNo,
-                MessageBoxImage.Question,
-                MessageBoxResult.No);
-
-            if (result != MessageBoxResult.Yes)
-            {
-                return;
-            }
-
             ResetDefaultsRequested?.Invoke();
             ColorPaletteSelection defaults = ColorPaletteSelection.Default;
             SelectPalette(defaults, notify: false);

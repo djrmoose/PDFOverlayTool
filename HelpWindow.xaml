@@ -69,7 +69,7 @@
                                 <TextBlock Style="{StaticResource HelpText}" Text="&#8226; Ctrl + mouse wheel zooms. Ctrl + drag pans the view."/>
                                 <TextBlock Style="{StaticResource HelpText}" Text="&#8226; Ctrl + Alt + mouse wheel adjusts overlay scale."/>
                                 <TextBlock Style="{StaticResource HelpText}" Text="&#8226; Fit to Window sizes the current page to the viewer."/>
-                                <TextBlock Style="{StaticResource HelpText}" Text="&#8226; Demo Tour (button below) loads the sample PDFs and walks through the main features step by step."/>
+                                <TextBlock Style="{StaticResource HelpText}" Text="&#8226; Demo Tour (button below) loads the sample PDFs and walks through the main features step by step. You perform each action yourself."/>
 
                                 <TextBlock Text="Performance (AUTO / MANUAL)" Style="{StaticResource SectionHeader}"/>
                                 <TextBlock Style="{StaticResource HelpText}" Text="&#8226; AUTO is the default. The top row shows the current DPI and Page Cache readout (no sliders). Under memory pressure, AUTO steps down through linked quality levels about every 2 seconds: Page Cache lowers first while DPI stays at 250 (5&#8594;4&#8594;3), then cache and DPI drop together (2/225, 1/200), and the last descent splits into cache to zero at 200 DPI, then DPI to 150. The AUTO button turns amber while reducing and green while restoring one level at a time when memory has headroom."/>

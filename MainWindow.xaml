@@ -713,6 +713,8 @@
                                         Minimum="75"
                                         Maximum="125"
                                         Value="100"
+                                        SmallChange="0.5"
+                                        LargeChange="5"
                                         TickFrequency="10"
                                         TickPlacement="BottomRight"
                                         Ticks="100"
@@ -873,8 +875,7 @@
 
                                                 <Image.RenderTransform>
                                                         <TransformGroup>
-                                                                <!-- Rotate first: pivots around the image center in natural
-                                                                     (unscaled) coordinates, then scale/translate apply. -->
+                                                                <!-- Rotate, then scale: both pivot around the viewer center, then translate applies. -->
                                                                 <RotateTransform x:Name="OverlayRotateTransform"
                                                                                  Angle="0"/>
 

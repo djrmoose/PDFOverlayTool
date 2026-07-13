@@ -21,6 +21,7 @@ namespace PdfOverlayTool
             StepBodyText.Text = body;
             BackButton.IsEnabled = index > 0;
             NextButton.Content = index == total - 1 ? "Finish" : "Next";
+            SkipButton.Visibility = index == total - 1 ? Visibility.Collapsed : Visibility.Visible;
         }
 
         public void PositionNearOwner(Window owner)

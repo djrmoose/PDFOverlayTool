@@ -242,6 +242,8 @@ namespace PdfOverlayTool
             details["avgFileSizeMb"] = snapshot.AvgFileSizeMegabytes;
             details["avgFilePageCount"] = snapshot.AvgFilePageCount;
             details["demoStatus"] = snapshot.DemoStatus;
+            details["demoTourViewed"] = snapshot.DemoTourViewed;
+            details["demoStepsViewed"] = snapshot.DemoStepsViewed;
             details["helpClickCount"] = snapshot.HelpClickCount;
             details["autoMemoryReductionEngaged"] = snapshot.AutoMemoryReductionEngaged;
             details["autoMemoryRecoveryEngaged"] = snapshot.AutoMemoryRecoveryEngaged;

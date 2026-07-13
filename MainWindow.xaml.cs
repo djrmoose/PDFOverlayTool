@@ -44,7 +44,7 @@ namespace PdfOverlayTool
         private const double ZOOM_STEP = 1.05;
         private const double ZOOM_MIN = 0.1;
         private const double ZOOM_MAX = 10.0;
-        private const double SCALE_WHEEL_STEP = 1.0;
+        private const double SCALE_WHEEL_STEP = 0.5;
 
         // Auto memory-management thresholds / timings
         private const double CACHE_MEMORY_PERCENT_THRESHOLD = 25.0;
@@ -661,8 +661,7 @@ namespace PdfOverlayTool
             }
             else
             {
-                // The rotation pivot is the image center, so it must follow size changes
-                // when a different page or file lands in the overlay.
+                // Scale/rotate pivot follows the viewer center; refresh when overlay content changes.
                 ApplyOverlayRotation();
             }
 
@@ -1899,6 +1898,7 @@ namespace PdfOverlayTool
             OverlayImage.Opacity = Math.Clamp(overlayOpacity, 0.0, 1.0);
 
             double scale = ScaleSlider.Value / 100.0;
+            ApplyOverlayPivotCenters();
             OverlayScaleTransform.ScaleX = scale;
             OverlayScaleTransform.ScaleY = scale;
 
@@ -1918,10 +1918,8 @@ namespace PdfOverlayTool
             double fineAngle = RotateFineSlider?.Value ?? 0.0;
             double totalAngle = _overlayQuarterTurns * 90.0 + fineAngle;
 
-            // Pivot around the image center in natural (unscaled) coordinates; the
-            // rotate transform runs before scale/translate in the transform group.
-            OverlayRotateTransform.CenterX = (OverlayImage.Source?.Width ?? OverlayImage.ActualWidth) / 2.0;
-            OverlayRotateTransform.CenterY = (OverlayImage.Source?.Height ?? OverlayImage.ActualHeight) / 2.0;
+            // Pivot scale and rotate around the center of the visible viewer area.
+            ApplyOverlayPivotCenters();
             OverlayRotateTransform.Angle = totalAngle;
 
             if (RotateAngleText != null)
@@ -1930,6 +1928,64 @@ namespace PdfOverlayTool
                 double displayAngle = ((totalAngle + 180.0) % 360.0 + 360.0) % 360.0 - 180.0;
                 RotateAngleText.Text = $"{displayAngle:0.0}\u00B0";
             }
+        }
+
+        private void ApplyOverlayPivotCenters()
+        {
+            if (OverlayImage == null)
+            {
+                return;
+            }
+
+            double centerX;
+            double centerY;
+
+            if (TryGetViewerContentCenter(out Point viewerCenter))
+            {
+                centerX = viewerCenter.X;
+                centerY = viewerCenter.Y;
+            }
+            else
+            {
+                centerX = (OverlayImage.Source?.Width ?? OverlayImage.ActualWidth) / 2.0;
+                centerY = (OverlayImage.Source?.Height ?? OverlayImage.ActualHeight) / 2.0;
+            }
+
+            if (OverlayRotateTransform != null)
+            {
+                OverlayRotateTransform.CenterX = centerX;
+                OverlayRotateTransform.CenterY = centerY;
+            }
+
+            if (OverlayScaleTransform != null)
+            {
+                OverlayScaleTransform.CenterX = centerX;
+                OverlayScaleTransform.CenterY = centerY;
+            }
+        }
+
+        private bool TryGetViewerContentCenter(out Point center)
+        {
+            center = default;
+
+            if (ViewerScrollViewer == null || _zoom <= 0)
+            {
+                return false;
+            }
+
+            double viewportWidth = ViewerScrollViewer.ViewportWidth;
+            double viewportHeight = ViewerScrollViewer.ViewportHeight;
+
+            if (viewportWidth <= 0 || viewportHeight <= 0)
+            {
+                return false;
+            }
+
+            center = new Point(
+                (ViewerScrollViewer.HorizontalOffset + viewportWidth / 2.0) / _zoom,
+                (ViewerScrollViewer.VerticalOffset + viewportHeight / 2.0) / _zoom);
+
+            return true;
         }
 
         private void RotateCw_Click(object sender, RoutedEventArgs e)

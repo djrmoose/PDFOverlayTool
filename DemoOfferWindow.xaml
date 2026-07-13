@@ -46,7 +46,7 @@
                            TextWrapping="Wrap"
                            LineHeight="20"
                            Margin="0,0,0,20"
-                           Text="The demo loads the included sample PDFs and walks you through the main features — comparison tints, paging, alignment, zoom, and more."/>
+                           Text="The demo loads the sample PDFs and walks you through the main features: comparison, alignment, zoom, performance, and more. You try each tool yourself."/>
 
                 <StackPanel Grid.Row="3"
                             Orientation="Horizontal"

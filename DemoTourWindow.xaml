@@ -61,7 +61,7 @@
 
                         <Button x:Name="SkipButton"
                                 Grid.Column="0"
-                                Content="Skip tour"
+                                Content="Exit tour"
                                 Padding="10,4"
                                 Click="SkipButton_Click"/>
 

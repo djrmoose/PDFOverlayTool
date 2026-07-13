@@ -34,6 +34,7 @@ namespace PdfOverlayTool
         private bool _autoMemoryRecoveryEngaged;
         private double _maxCacheMegabytes;
         private DemoStatus _demoStatus = DemoStatus.NotApplicable;
+        private int _demoStepsViewed;
         private bool _closeFeedbackPromptShown;
         private bool _closeFeedbackSkipped;
         private string? _closeFeedbackRating;
@@ -53,6 +54,7 @@ namespace PdfOverlayTool
                 _autoMemoryRecoveryEngaged = false;
                 _maxCacheMegabytes = 0;
                 _demoStatus = DemoStatus.NotApplicable;
+                _demoStepsViewed = 0;
                 _closeFeedbackPromptShown = false;
                 _closeFeedbackSkipped = false;
                 _closeFeedbackRating = null;
@@ -130,7 +132,7 @@ namespace PdfOverlayTool
             }
         }
 
-        /// <summary>Future: user completed the interactive demo tour.</summary>
+        /// <summary>User completed the interactive demo tour.</summary>
         public void RecordDemoViewed()
         {
             lock (_lock)
@@ -139,12 +141,32 @@ namespace PdfOverlayTool
             }
         }
 
-        /// <summary>User dismissed the interactive demo tour.</summary>
+        /// <summary>User dismissed the interactive demo tour before finishing.</summary>
         public void RecordDemoSkipped()
         {
             lock (_lock)
             {
-                _demoStatus = DemoStatus.Skipped;
+                if (_demoStatus != DemoStatus.Viewed)
+                {
+                    _demoStatus = DemoStatus.Skipped;
+                }
+            }
+        }
+
+        /// <summary>Records the highest demo tour step the user reached (1-based).</summary>
+        public void RecordDemoTourStepViewed(int stepNumber)
+        {
+            if (stepNumber <= 0)
+            {
+                return;
+            }
+
+            lock (_lock)
+            {
+                if (stepNumber > _demoStepsViewed)
+                {
+                    _demoStepsViewed = stepNumber;
+                }
             }
         }
 
@@ -181,6 +203,8 @@ namespace PdfOverlayTool
                     AvgFileSizeMegabytes = avgFileSizeMegabytes,
                     AvgFilePageCount = avgFilePageCount,
                     DemoStatus = _demoStatus.ToString(),
+                    DemoTourViewed = _demoStatus == DemoStatus.Viewed,
+                    DemoStepsViewed = _demoStepsViewed,
                     HelpClickCount = _helpClickCount,
                     AutoMemoryReductionEngaged = _autoMemoryReductionEngaged,
                     AutoMemoryRecoveryEngaged = _autoMemoryRecoveryEngaged,
@@ -217,6 +241,8 @@ namespace PdfOverlayTool
         public double? AvgFileSizeMegabytes { get; set; }
         public double? AvgFilePageCount { get; set; }
         public string DemoStatus { get; set; } = "";
+        public bool DemoTourViewed { get; set; }
+        public int DemoStepsViewed { get; set; }
         public int HelpClickCount { get; set; }
         public bool AutoMemoryReductionEngaged { get; set; }
         public bool AutoMemoryRecoveryEngaged { get; set; }
