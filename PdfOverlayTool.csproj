@@ -10,6 +10,9 @@
   <PropertyGroup>
     <ApplicationIcon>Resources\OCT.ico</ApplicationIcon>
 </PropertyGroup>
+<PropertyGroup>
+    <Version>1.0.1</Version>
+  </PropertyGroup>
 
   <ItemGroup>
     <PackageReference Include="PDFtoImage" Version="5.2.1" />
