@@ -44,7 +44,7 @@ namespace PdfOverlayTool
         private const double ZOOM_STEP = 1.05;
         private const double ZOOM_MIN = 0.1;
         private const double ZOOM_MAX = 10.0;
-        private const double SCALE_WHEEL_STEP = 0.5;
+        private const double SCALE_WHEEL_STEP = 0.25;
 
         // Auto memory-management thresholds / timings
         private const double CACHE_MEMORY_PERCENT_THRESHOLD = 25.0;
@@ -119,6 +119,9 @@ namespace PdfOverlayTool
 
         // Whole 90-degree turns of the overlay (0-3); fine skew comes from RotateFineSlider.
         private int _overlayQuarterTurns;
+
+        private readonly Dictionary<int, OverlayPageAlignment> _overlayPageAlignments = new();
+        private int? _currentOverlayAlignmentPage;
 
         private bool _isRestoringSettings;
         private bool _settingsReady;
@@ -547,14 +550,33 @@ namespace PdfOverlayTool
             if (!string.IsNullOrWhiteSpace(otherPane.FilePath)
                 && GetPageNumber(otherPane.PageTextBox.Text) != 1)
             {
-                otherPane.PageTextBox.Text = "1";
-                LoadPage(otherPane);
+                if (otherPane == _overlayPane)
+                {
+                    int previousOverlayPage = _currentOverlayAlignmentPage
+                        ?? GetPageNumber(otherPane.PageTextBox.Text);
+                    SaveOverlayPageAlignment(previousOverlayPage);
+                    otherPane.PageTextBox.Text = "1";
+                    LoadPage(otherPane, overlayPageNavigation: true);
+                }
+                else
+                {
+                    otherPane.PageTextBox.Text = "1";
+                    LoadPage(otherPane);
+                }
+            }
+
+            if (pane == _overlayPane)
+            {
+                ClearOverlayPageAlignments();
             }
 
             RecordFileOpenTelemetry(pane, filePath);
             bool fitToWindowOnLoad = pane == _basePane
                 || string.IsNullOrWhiteSpace(_basePane?.FilePath);
-            LoadPage(pane, fitToWindowOnLoad: fitToWindowOnLoad);
+            LoadPage(
+                pane,
+                fitToWindowOnLoad: fitToWindowOnLoad,
+                overlayPageNavigation: pane == _overlayPane);
             UpdatePageNavigationButtons();
             UpdateOverlayNavigationButtons();
             UpdatePageInputState();
@@ -590,7 +612,7 @@ namespace PdfOverlayTool
             SetStatus("Reloaded selected pages.");
         }
 
-        private void LoadPage(DocumentPane pane, bool fitToWindowOnLoad = false)
+        private void LoadPage(DocumentPane pane, bool fitToWindowOnLoad = false, bool overlayPageNavigation = false)
         {
             if (string.IsNullOrWhiteSpace(pane.FilePath))
             {
@@ -610,7 +632,7 @@ namespace PdfOverlayTool
             BitmapSource? cached = TryGetCachedDisplayBitmap(filePath, pageIndex, pane.Role);
             if (cached != null)
             {
-                ApplyLoadedPage(pane, filePath, pageIndex, cached, fitToWindowOnLoad);
+                ApplyLoadedPage(pane, filePath, pageIndex, cached, fitToWindowOnLoad, overlayPageNavigation);
                 return;
             }
 
@@ -632,7 +654,13 @@ namespace PdfOverlayTool
                     {
                         if (loadVersion == pane.LoadVersion)
                         {
-                            ApplyLoadedPage(pane, filePath, pageIndex, display, fitToWindowOnLoad);
+                            ApplyLoadedPage(
+                                pane,
+                                filePath,
+                                pageIndex,
+                                display,
+                                fitToWindowOnLoad,
+                                overlayPageNavigation);
                         }
                     }));
                 }
@@ -653,7 +681,8 @@ namespace PdfOverlayTool
             string filePath,
             int pageIndex,
             BitmapSource displayBitmap,
-            bool fitToWindowOnLoad = false)
+            bool fitToWindowOnLoad = false,
+            bool overlayPageNavigation = false)
         {
             pane.ImageControl.Source = displayBitmap;
 
@@ -661,13 +690,35 @@ namespace PdfOverlayTool
             {
                 UseFilteredOverlayPickerCheckbox.IsEnabled = true;
             }
-
-            ResetOverlayScaleAndRotation();
+            else
+            {
+                if (overlayPageNavigation)
+                {
+                    int page = GetPageNumber(pane.PageTextBox.Text);
+                    if (fitToWindowOnLoad)
+                    {
+                        // Fit first so scale/rotate pivot uses the post-fit viewer zoom and scroll.
+                        _renderDpiForCurrentDisplay = selectedDpi;
+                        FitToWindowDeferred(() => RestoreOverlayPageAlignment(page));
+                    }
+                    else
+                    {
+                        RestoreOverlayPageAlignment(page);
+                    }
+                }
+                else
+                {
+                    ApplyOverlayRotation();
+                }
+            }
 
             if (fitToWindowOnLoad)
             {
-                _renderDpiForCurrentDisplay = selectedDpi;
-                FitToWindowDeferred();
+                if (!(pane == _overlayPane && overlayPageNavigation))
+                {
+                    _renderDpiForCurrentDisplay = selectedDpi;
+                    FitToWindowDeferred();
+                }
             }
             else if (pane == _basePane)
             {
@@ -2007,37 +2058,205 @@ namespace PdfOverlayTool
             SetStatus($"Overlay rotated to {RotateAngleText?.Text}.");
         }
 
-        private void ResetOverlayScaleAndRotation()
+        private void ClearOverlayPageAlignments()
         {
-            if (ScaleSlider != null)
+            _overlayPageAlignments.Clear();
+            _currentOverlayAlignmentPage = null;
+        }
+
+        private OverlayPageAlignment CaptureCurrentOverlayAlignment()
+        {
+            Point contentPosition = TryGetOverlayTopLeftInContent(out Point topLeft)
+                ? topLeft
+                : new Point(XOffsetSlider?.Value ?? 0, YOffsetSlider?.Value ?? 0);
+
+            return new OverlayPageAlignment(
+                ScaleSlider?.Value ?? 100,
+                _overlayQuarterTurns,
+                RotateFineSlider?.Value ?? 0,
+                OpacitySlider?.Value ?? 50,
+                contentPosition.X,
+                contentPosition.Y);
+        }
+
+        private bool TryGetOverlayTopLeftInContent(out Point topLeft)
+        {
+            topLeft = default;
+
+            if (OverlayImage == null || OverlayHost == null)
             {
-                ScaleSlider.Value = 100;
+                return false;
             }
 
-            _overlayQuarterTurns = 0;
-
-            if (RotateFineSlider != null)
+            try
             {
-                RotateFineSlider.Value = 0;
+                OverlayHost.UpdateLayout();
+                GeneralTransform transform = OverlayImage.TransformToVisual(OverlayHost);
+                topLeft = transform.Transform(new Point(0, 0));
+                return true;
+            }
+            catch (InvalidOperationException)
+            {
+                return false;
+            }
+        }
+
+        private void ApplyOverlayContentPosition(Point desiredTopLeft)
+        {
+            if (XOffsetSlider == null ||
+                YOffsetSlider == null ||
+                OverlayTranslateTransform == null)
+            {
+                return;
             }
 
-            if (XOffsetSlider != null)
+            double translateX = XOffsetSlider.Value;
+            double translateY = YOffsetSlider.Value;
+
+            _isRestoringSettings = true;
+            try
             {
-                XOffsetSlider.Value = 0;
+                for (int attempt = 0; attempt < 12; attempt++)
+                {
+                    XOffsetSlider.Value = translateX;
+                    YOffsetSlider.Value = translateY;
+                    ApplyOverlaySettings();
+
+                    if (!TryGetOverlayTopLeftInContent(out Point actualTopLeft))
+                    {
+                        return;
+                    }
+
+                    double deltaX = desiredTopLeft.X - actualTopLeft.X;
+                    double deltaY = desiredTopLeft.Y - actualTopLeft.Y;
+
+                    if (Math.Abs(deltaX) < 0.05 && Math.Abs(deltaY) < 0.05)
+                    {
+                        return;
+                    }
+
+                    translateX += deltaX;
+                    translateY += deltaY;
+                }
+            }
+            finally
+            {
+                _isRestoringSettings = false;
+            }
+        }
+
+        private void ApplyOverlayAlignment(OverlayPageAlignment alignment)
+        {
+            _isRestoringSettings = true;
+            try
+            {
+                if (ScaleSlider != null)
+                {
+                    ScaleSlider.Value = alignment.Scale;
+                }
+
+                _overlayQuarterTurns = alignment.QuarterTurns;
+
+                if (RotateFineSlider != null)
+                {
+                    RotateFineSlider.Value = alignment.FineRotation;
+                }
+
+                if (OpacitySlider != null)
+                {
+                    OpacitySlider.Value = alignment.Opacity;
+                }
+
+                if (XOffsetSlider != null)
+                {
+                    XOffsetSlider.Value = 0;
+                }
+
+                if (YOffsetSlider != null)
+                {
+                    YOffsetSlider.Value = 0;
+                }
+
+                ApplyOverlaySettings();
+            }
+            finally
+            {
+                _isRestoringSettings = false;
             }
 
-            if (YOffsetSlider != null)
+            ApplyOverlayContentPosition(new Point(alignment.ContentX, alignment.ContentY));
+        }
+
+        private void ApplyDefaultOverlayAlignment()
+        {
+            _isRestoringSettings = true;
+            try
             {
-                YOffsetSlider.Value = 0;
+                if (ScaleSlider != null)
+                {
+                    ScaleSlider.Value = 100;
+                }
+
+                _overlayQuarterTurns = 0;
+
+                if (RotateFineSlider != null)
+                {
+                    RotateFineSlider.Value = 0;
+                }
+
+                if (OpacitySlider != null)
+                {
+                    OpacitySlider.Value = 50;
+                }
+
+                if (XOffsetSlider != null)
+                {
+                    XOffsetSlider.Value = 0;
+                }
+
+                if (YOffsetSlider != null)
+                {
+                    YOffsetSlider.Value = 0;
+                }
+
+                ApplyOverlaySettings();
+            }
+            finally
+            {
+                _isRestoringSettings = false;
+            }
+        }
+
+        private void SaveOverlayPageAlignment(int page)
+        {
+            if (page < 1 || string.IsNullOrWhiteSpace(_overlayPane.FilePath))
+            {
+                return;
             }
 
-            ApplyOverlaySettings();
+            _overlayPageAlignments[page] = CaptureCurrentOverlayAlignment();
+        }
+
+        private void RestoreOverlayPageAlignment(int page)
+        {
+            if (_overlayPageAlignments.TryGetValue(page, out OverlayPageAlignment saved))
+            {
+                ApplyOverlayAlignment(saved);
+            }
+            else
+            {
+                ApplyDefaultOverlayAlignment();
+            }
+
+            _currentOverlayAlignmentPage = page;
         }
 
         private void ResetOverlay_Click(object sender, RoutedEventArgs e)
         {
-            OpacitySlider.Value = 50;
-            ResetOverlayScaleAndRotation();
+            int page = GetPageNumber(_overlayPane.PageTextBox.Text);
+            _overlayPageAlignments.Remove(page);
+            ApplyDefaultOverlayAlignment();
+            _currentOverlayAlignmentPage = page;
 
             SetStatus("Overlay reset.");
         }
@@ -2174,6 +2393,11 @@ namespace PdfOverlayTool
 
         private void FitToWindow_Click(object sender, RoutedEventArgs e)
         {
+            PerformFitToWindow();
+        }
+
+        private void PerformFitToWindow(Action? afterFit = null)
+        {
             if (ViewerScrollViewer == null || OverlayHost == null)
                 return;
 
@@ -2227,6 +2451,15 @@ namespace PdfOverlayTool
             // Reset scroll to top-left
             ViewerScrollViewer.ScrollToHorizontalOffset(0);
             ViewerScrollViewer.ScrollToVerticalOffset(0);
+
+            if (afterFit != null)
+            {
+                afterFit();
+            }
+            else if (OverlayImage.Source != null)
+            {
+                ApplyOverlaySettings();
+            }
         }
 
         private void ViewerScrollViewer_MouseLeftButtonDown(object sender, MouseButtonEventArgs e)
@@ -2285,11 +2518,11 @@ namespace PdfOverlayTool
             Cursor = Cursors.Arrow;
         }
 
-        private void FitToWindowDeferred()
+        private void FitToWindowDeferred(Action? afterFit = null)
         {
             Dispatcher.BeginInvoke(new Action(() =>
             {
-                FitToWindow_Click(this, new RoutedEventArgs());
+                PerformFitToWindow(afterFit);
             }), DispatcherPriority.Loaded);
         }
 
@@ -2436,8 +2669,16 @@ namespace PdfOverlayTool
             if (newPage >= 1 &&
                 (!pane.PageCount.HasValue || newPage <= pane.PageCount.Value))
             {
+                if (pane == _overlayPane)
+                {
+                    SaveOverlayPageAlignment(currentPage);
+                }
+
                 pane.PageTextBox.Text = newPage.ToString();
-                LoadPage(pane, fitToWindowOnLoad: true);
+                LoadPage(
+                    pane,
+                    fitToWindowOnLoad: true,
+                    overlayPageNavigation: pane == _overlayPane);
                 return true;
             }
 
@@ -2466,8 +2707,21 @@ namespace PdfOverlayTool
             // Prevent beep / extra processing
             e.Handled = true;
 
+            int newOverlayPage = GetPageNumber(_overlayPane.PageTextBox.Text);
+            int oldOverlayPage = _currentOverlayAlignmentPage ?? newOverlayPage;
+            bool overlayPageChanged = !string.IsNullOrWhiteSpace(_overlayPane.FilePath)
+                && newOverlayPage != oldOverlayPage;
+
+            if (overlayPageChanged)
+            {
+                SaveOverlayPageAlignment(oldOverlayPage);
+            }
+
             LoadPage(_basePane, fitToWindowOnLoad: true);
-            LoadPage(_overlayPane, fitToWindowOnLoad: true);
+            LoadPage(
+                _overlayPane,
+                fitToWindowOnLoad: true,
+                overlayPageNavigation: overlayPageChanged);
             UpdatePageNavigationButtons();
             UpdateOverlayNavigationButtons();
 
@@ -2889,6 +3143,18 @@ namespace PdfOverlayTool
 
             UpdateMemoryUsageDisplay();
         }
+
+        /// <summary>
+        /// Per-overlay-page alignment for the current overlay file session.
+        /// ContentX/ContentY are the overlay top-left in document space (zoom-independent).
+        /// </summary>
+        private readonly record struct OverlayPageAlignment(
+            double Scale,
+            int QuarterTurns,
+            double FineRotation,
+            double Opacity,
+            double ContentX,
+            double ContentY);
 
         /// <summary>
         /// Holds the state and UI references for one document (base or overlay),

@@ -704,7 +704,7 @@
                                            Text="Scale"
                                            VerticalAlignment="Center"
                                            Margin="0,0,8,0"
-                                           ToolTip="Resize the overlay relative to the base (75&#8211;150%)."/>
+                                           ToolTip="Resize the overlay relative to the base (75&#8211;125%)."/>
 
                                 <Slider Grid.Column="9"
                                         x:Name="ScaleSlider"
@@ -719,7 +719,7 @@
                                         TickPlacement="BottomRight"
                                         Ticks="100"
                                         IsSnapToTickEnabled="False"
-                                        ToolTip="Resize the overlay relative to the base (75&#8211;150%)."
+                                        ToolTip="Resize the overlay relative to the base (75&#8211;125%)."
                                         Style="{StaticResource ProminentSliderStyle}"
                                         ValueChanged="OverlayControl_ValueChanged"/>
 

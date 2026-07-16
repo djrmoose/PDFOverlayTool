@@ -61,7 +61,7 @@
                                 <TextBlock Text="Aligning the Overlay" Style="{StaticResource SectionHeader}"/>
                                 <TextBlock Style="{StaticResource HelpText}" Text="&#8226; Drag the overlay with the mouse to position it."/>
                                 <TextBlock Style="{StaticResource HelpText}" Text="&#8226; Ctrl + arrow keys nudge the overlay one pixel at a time for precise registration."/>
-                                <TextBlock Style="{StaticResource HelpText}" Text="&#8226; Scale resizes the overlay (75&#8211;150%). Opacity fades the base (left) or the overlay (right)."/>
+                                <TextBlock Style="{StaticResource HelpText}" Text="&#8226; Scale resizes the overlay (75&#8211;125%). Opacity fades the base (left) or the overlay (right)."/>
                                 <TextBlock Style="{StaticResource HelpText}" Text="&#8226; The &#10227; button rotates the overlay in 90&#176; steps; the small slider adds &#177;5&#176; fine correction for skewed scans."/>
                                 <TextBlock Style="{StaticResource HelpText}" Text="&#8226; Reset returns opacity, scale, position, and rotation to neutral."/>
 
