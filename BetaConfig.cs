@@ -10,7 +10,7 @@ namespace PdfOverlayTool
     {
         public static readonly DateOnly FileLoadingDisabledDate = new(2026, 9, 1);
 
-        public const string VersionNumber = "v1.0.0-beta.1";
+        public const string VersionNumber = "v1.0.1-beta.1";
 
         public const string DeveloperEmail = "djrmoose@gmail.com";
 
