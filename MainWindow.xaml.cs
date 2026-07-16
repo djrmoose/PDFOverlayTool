@@ -150,6 +150,7 @@ namespace PdfOverlayTool
         public MainWindow()
         {
             InitializeComponent();
+            Title = $"Overlay Compare Tool ({BetaConfig.VersionNumber})";
 
             _basePane = new DocumentPane("base", "Base", ColorPalette.GetBaseTintColor(ColorPaletteSelection.Default), BaseImage, BasePageTextBox, BasePageCount, BaseFileName);
             _overlayPane = new DocumentPane("overlay", "Overlay", ColorPalette.GetOverlayTintColor(ColorPaletteSelection.Default), OverlayImage, OverlayPageTextBox, OverlayPageCount, OverlayFileName);
