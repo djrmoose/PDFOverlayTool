@@ -8,10 +8,12 @@
     <UseWPF>true</UseWPF>
   </PropertyGroup>
   <PropertyGroup>
-    <ApplicationIcon>Resources\OCT.ico</ApplicationIcon>
-</PropertyGroup>
-<PropertyGroup>
+    <AssemblyName>OverlayCompareTool</AssemblyName>
+    <Product>Overlay Compare Tool</Product>
     <Version>1.0.1</Version>
+  </PropertyGroup>
+  <PropertyGroup>
+    <ApplicationIcon>Resources\OCT.ico</ApplicationIcon>
   </PropertyGroup>
 
   <ItemGroup>
@@ -19,9 +21,9 @@
   </ItemGroup>
 
   <ItemGroup>
-  <Resource Include="Resources\OCT.ico" />
-  <Resource Include="Resources\Bluemoose.png" />
-</ItemGroup>
+    <Resource Include="Resources\OCT.ico" />
+    <Resource Include="Resources\Bluemoose.png" />
+  </ItemGroup>
 
   <ItemGroup>
     <Content Include="Resources\Demo_Rev A.pdf">
