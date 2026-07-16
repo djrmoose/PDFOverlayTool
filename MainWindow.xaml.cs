@@ -2021,14 +2021,22 @@ namespace PdfOverlayTool
                 RotateFineSlider.Value = 0;
             }
 
+            if (XOffsetSlider != null)
+            {
+                XOffsetSlider.Value = 0;
+            }
+
+            if (YOffsetSlider != null)
+            {
+                YOffsetSlider.Value = 0;
+            }
+
             ApplyOverlaySettings();
         }
 
         private void ResetOverlay_Click(object sender, RoutedEventArgs e)
         {
             OpacitySlider.Value = 50;
-            XOffsetSlider.Value = 0;
-            YOffsetSlider.Value = 0;
             ResetOverlayScaleAndRotation();
 
             SetStatus("Overlay reset.");
