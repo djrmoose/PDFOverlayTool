@@ -3,14 +3,14 @@ using System.Globalization;
 namespace PdfOverlayTool
 {
     /// <summary>
-    /// BETA demonstration limits. Change <see cref="FileLoadingDisabledDate"/> to adjust when
-    /// custom file loading is turned off.
+    /// Beta limits. Change <see cref="FileLoadingDisabledDate"/> to adjust when
+    /// custom file loading is turned off and demonstration mode begins.
     /// </summary>
     public static class BetaConfig
     {
-        public static readonly DateOnly FileLoadingDisabledDate = new(2026, 9, 1);
+        public static readonly DateOnly FileLoadingDisabledDate = new(2026, 12, 1);
 
-        public const string VersionNumber = "v1.0.1-beta.1";
+        public const string VersionNumber = "v1.0.1-beta.2";
 
         public const string DeveloperEmail = "djrmoose@gmail.com";
 

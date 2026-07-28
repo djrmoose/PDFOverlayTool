@@ -9,7 +9,7 @@
  *      Who has access: Anyone (even anonymous)   ← required for desktop app POSTs
  * 4. Authorize: open the /exec URL in a browser once and approve access.
  * 5. Copy the /exec URL into either:
- *      %LocalAppData%\PdfOverlayTool\telemetry.json  (recommended — see telemetry.json.example)
+ *      %LocalAppData%\Overlay Compare Tool\telemetry.json  (recommended — see telemetry.json.example)
  *    or TelemetryConfig.WebAppUrl in the C# project.
  *
  * TROUBLESHOOTING "Access Denied":

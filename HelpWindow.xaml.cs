@@ -25,5 +25,10 @@ namespace PdfOverlayTool
             DemoTourRequested = true;
             Close();
         }
+
+        private void ThirdPartyNoticesLink_Click(object sender, RoutedEventArgs e)
+        {
+            ThirdPartyNotices.ShowDialog(this);
+        }
     }
 }

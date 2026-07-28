@@ -14,13 +14,13 @@ namespace PdfOverlayTool
 
             if (fileLoadingDisabled)
             {
-                Title = "Demonstration Expired";
-                TitleTextBlock.Text = "Demonstration Expired";
+                Title = "Beta period ended";
+                TitleTextBlock.Text = "Beta period ended";
 
                 BodyTextBlock.Inlines.Clear();
                 BodyTextBlock.Inlines.Add(new Run(
-                    "The Overlay Compare Tool " + BetaConfig.VersionNumber + " demonstration period has expired. " +
-                    "Only DEMO mode is available.\n\n" +
+                    "The Overlay Compare Tool " + BetaConfig.VersionNumber + " beta period has ended. " +
+                    "Only demonstration mode is available (included sample files only).\n\n" +
                     "To request an updated version or provide feedback, contact the developer at "));
                 var link = new Hyperlink(new Run(BetaConfig.DeveloperEmail))
                 {
@@ -32,14 +32,14 @@ namespace PdfOverlayTool
             }
             else
             {
-                Title = "BETA Demonstration " + BetaConfig.VersionNumber;
-                TitleTextBlock.Text = "BETA Demonstration";
+                Title = "Beta " + BetaConfig.VersionNumber;
+                TitleTextBlock.Text = "Beta";
 
                 BodyTextBlock.Inlines.Clear();
                 BodyTextBlock.Inlines.Add(new Run(
-                    "This is demonstration " + BetaConfig.VersionNumber + " of the Overlay Compare Tool.\n\n" +
-                    $"This demonstration version is valid until {BetaConfig.FileLoadingDisabledDateDisplay}. " +
-                    "After that date, only DEMO mode will be available.\n\n" +
+                    "This is " + BetaConfig.VersionNumber + " of the Overlay Compare Tool beta.\n\n" +
+                    $"This beta is valid until {BetaConfig.FileLoadingDisabledDateDisplay}. " +
+                    "After that date, only demonstration mode will be available.\n\n" +
                     "Your feedback is extremely valuable! Please send any feedback to "));
                 var link = new Hyperlink(new Run(BetaConfig.DeveloperEmail))
                 {

@@ -4,7 +4,7 @@ using System.Text.Json;
 namespace PdfOverlayTool
 {
     /// <summary>
-    /// User preferences persisted under %LocalAppData%\PdfOverlayTool\settings.json.
+    /// User preferences persisted under %LocalAppData%\Overlay Compare Tool\settings.json.
     /// </summary>
     public sealed class UserSettings
     {
@@ -48,7 +48,7 @@ namespace PdfOverlayTool
         private static string SettingsDirectory =>
             Path.Combine(
                 Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
-                "PdfOverlayTool");
+                "Overlay Compare Tool");
 
         private static string SettingsPath => Path.Combine(SettingsDirectory, "settings.json");
 

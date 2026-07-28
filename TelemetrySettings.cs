@@ -4,7 +4,7 @@ using System.Text.Json;
 namespace PdfOverlayTool
 {
     /// <summary>
-    /// Local telemetry endpoint config: %LocalAppData%\PdfOverlayTool\telemetry.json
+    /// Local telemetry endpoint config: %LocalAppData%\Overlay Compare Tool\telemetry.json
     /// </summary>
     public sealed class TelemetrySettings
     {
@@ -13,7 +13,7 @@ namespace PdfOverlayTool
         private static string SettingsPath =>
             Path.Combine(
                 Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
-                "PdfOverlayTool",
+                "Overlay Compare Tool",
                 "telemetry.json");
 
         public static TelemetrySettings Load()

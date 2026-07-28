@@ -1,5 +1,6 @@
 using System.ComponentModel;
 using System.Windows;
+using System.Windows.Input;
 
 namespace PdfOverlayTool
 {
@@ -16,8 +17,29 @@ namespace PdfOverlayTool
             InitializeComponent();
             ColorPalette.ApplyDialogTheme(this, ColorPalette.CurrentSelection);
             TitleTextBlock.Text = $"Welcome to Overlay Compare Tool {BetaConfig.VersionNumber}";
+            TermsTitleTextBlock.Text = BetaTerms.Title;
             TermsTextBlock.Text = BetaTerms.Body;
+            AcceptTermsTextBlock.Text = BetaTerms.AcceptanceLabel;
+            AcceptTermsPanel.Loaded += (_, _) => UpdateAcceptTermsWrapWidth();
+            AcceptTermsPanel.SizeChanged += (_, _) => UpdateAcceptTermsWrapWidth();
             Closing += RegistrationWindow_Closing;
+        }
+
+        private void UpdateAcceptTermsWrapWidth()
+        {
+            if (AcceptTermsPanel.ActualWidth <= 0)
+            {
+                return;
+            }
+
+            // Leave room for the checkbox column and its right margin.
+            AcceptTermsTextBlock.MaxWidth = AcceptTermsPanel.ActualWidth - 30;
+        }
+
+        private void AcceptTermsTextBlock_MouseLeftButtonDown(object sender, MouseButtonEventArgs e)
+        {
+            AcceptTermsCheckBox.IsChecked = !AcceptTermsCheckBox.IsChecked;
+            e.Handled = true;
         }
 
         private void RegistrationWindow_Closing(object? sender, CancelEventArgs e)
@@ -37,7 +59,7 @@ namespace PdfOverlayTool
         {
             if (AcceptTermsCheckBox.IsChecked != true)
             {
-                ShowValidation("You must accept the Beta Terms of Use to continue.");
+                ShowValidation("You must accept the Bluemoose™ Beta Terms of Use to continue.");
                 return;
             }
 
@@ -82,6 +104,11 @@ namespace PdfOverlayTool
 
             int dot = email.LastIndexOf('.');
             return dot > at + 1 && dot < email.Length - 1;
+        }
+
+        private void ThirdPartyNoticesLink_Click(object sender, RoutedEventArgs e)
+        {
+            ThirdPartyNotices.ShowDialog(this);
         }
     }
 }

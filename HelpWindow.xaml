@@ -85,11 +85,11 @@
                                                Stretch="Uniform"
                                                Margin="0,0,12,0"
                                                VerticalAlignment="Top"
-                                               ToolTip="© Bluemoose"/>
+                                               ToolTip="Bluemoose™"/>
                                         <StackPanel VerticalAlignment="Center">
                                                 <TextBlock Style="{StaticResource HelpText}"
                                                            FontWeight="SemiBold"
-                                                           Text="© Bluemoose™"/>
+                                                           Text="Bluemoose™"/>
                                                 <TextBlock Style="{StaticResource HelpText}"
                                                            Text="Overlay Compare Tool — visually compare drawing and document revisions."/>
                                                 <TextBlock Style="{StaticResource HelpText}"
@@ -97,8 +97,12 @@
                                                            Text="© 2026 Bluemoose™. All rights reserved."/>
                                         </StackPanel>
                                 </StackPanel>
-                                <TextBlock Style="{StaticResource HelpText}" Text="Rendering: PDFtoImage / SkiaSharp."/>
-                                <TextBlock Style="{StaticResource HelpText}" Margin="0,8,0,16">
+                                <TextBlock Style="{StaticResource HelpText}" Margin="0,4,0,16">
+                                        <Run Text="Rendering uses third-party components (PDFtoImage, SkiaSharp, PDFium). "/>
+                                        <Hyperlink Click="ThirdPartyNoticesLink_Click">View Third-Party Notices</Hyperlink>
+                                        <Run Text="."/>
+                                </TextBlock>
+                                <TextBlock Style="{StaticResource HelpText}" Margin="0,0,0,16">
                                         <Run Text="Feature requests and bug reports are welcome. Contact the developer at "/>
                                         <Hyperlink NavigateUri="mailto:djrmoose@gmail.com?subject=Overlay%20Compare%20Tool%20Feedback"
                                                    RequestNavigate="FeedbackEmailLink_RequestNavigate">djrmoose@gmail.com</Hyperlink>

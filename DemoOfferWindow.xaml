@@ -26,7 +26,7 @@
                 </Grid.RowDefinitions>
 
                 <TextBlock Grid.Row="0"
-                           Text="Brought to you by © Bluemoose"
+                           Text="Brought to you by Bluemoose™"
                            FontSize="13"
                            FontStyle="Italic"
                            Foreground="{DynamicResource HelpTextBrush}"

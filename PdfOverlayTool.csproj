@@ -34,4 +34,11 @@
     </Content>
   </ItemGroup>
 
+  <ItemGroup>
+    <Compile Remove="PdfOverlayTool.Tests\**" />
+    <EmbeddedResource Remove="PdfOverlayTool.Tests\**" />
+    <None Remove="PdfOverlayTool.Tests\**" />
+    <Page Remove="PdfOverlayTool.Tests\**" />
+  </ItemGroup>
+
 </Project>

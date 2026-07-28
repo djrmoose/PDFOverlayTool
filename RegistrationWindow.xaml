@@ -32,6 +32,7 @@
                         <RowDefinition Height="Auto"/>
                         <RowDefinition Height="Auto"/>
                         <RowDefinition Height="Auto"/>
+                        <RowDefinition Height="Auto"/>
                 </Grid.RowDefinitions>
 
                 <TextBlock x:Name="TitleTextBlock"
@@ -43,7 +44,7 @@
                            Margin="0,0,0,4"/>
 
                 <TextBlock Grid.Row="1"
-                           Text="Brought to you by © Bluemoose"
+                           Text="Brought to you by Bluemoose™"
                            FontSize="13"
                            FontStyle="Italic"
                            Foreground="{DynamicResource BodyBrush}"
@@ -57,9 +58,8 @@
                            Margin="0,0,0,12"
                            Text="Please enter your name and email for beta support. Anonymous usage data (settings, session activity, and file statistics without file names) is sent automatically as described in the terms below."/>
 
-                <TextBlock Grid.Row="3"
-                           Text="{x:Static local:BetaTerms.Title}"
-                           xmlns:local="clr-namespace:PdfOverlayTool"
+                <TextBlock x:Name="TermsTitleTextBlock"
+                           Grid.Row="3"
                            FontSize="14"
                            FontWeight="SemiBold"
                            Foreground="{DynamicResource TextBrush}"
@@ -81,45 +81,69 @@
                         </ScrollViewer>
                 </Border>
 
-                <CheckBox x:Name="AcceptTermsCheckBox"
-                          Grid.Row="5"
-                          Margin="0,0,0,14"
-                          Foreground="{DynamicResource TextBrush}"
-                          Content="I have read and accept the © Bluemoose Beta Terms of Use, including automatic usage reporting."
-                          Checked="AcceptTermsCheckBox_Changed"
-                          Unchecked="AcceptTermsCheckBox_Changed"/>
+                <TextBlock Grid.Row="5"
+                           FontSize="12"
+                           Foreground="{DynamicResource BodyBrush}"
+                           Margin="0,0,0,12"
+                           TextWrapping="Wrap">
+                        <Run Text="Third-party components remain subject to their own licenses. "/>
+                        <Hyperlink Click="ThirdPartyNoticesLink_Click">View Third-Party Notices</Hyperlink>
+                        <Run Text="."/>
+                </TextBlock>
 
-                <TextBlock Grid.Row="6"
+                <Grid x:Name="AcceptTermsPanel"
+                      Grid.Row="6"
+                      Margin="0,0,0,14">
+                        <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="Auto"/>
+                                <ColumnDefinition Width="*"/>
+                        </Grid.ColumnDefinitions>
+                        <CheckBox x:Name="AcceptTermsCheckBox"
+                                  Grid.Column="0"
+                                  VerticalAlignment="Top"
+                                  Margin="0,2,6,0"
+                                  Checked="AcceptTermsCheckBox_Changed"
+                                  Unchecked="AcceptTermsCheckBox_Changed"/>
+                        <TextBlock x:Name="AcceptTermsTextBlock"
+                                   Grid.Column="1"
+                                   TextWrapping="Wrap"
+                                   VerticalAlignment="Top"
+                                   Cursor="Hand"
+                                   MouseLeftButtonDown="AcceptTermsTextBlock_MouseLeftButtonDown"
+                                   Foreground="{DynamicResource TextBrush}"/>
+                </Grid>
+
+                <TextBlock Grid.Row="7"
                            Text="Name"
                            Foreground="{DynamicResource TextBrush}"
                            Margin="0,0,0,4"/>
 
                 <TextBox x:Name="NameTextBox"
-                         Grid.Row="7"
+                         Grid.Row="8"
                          Margin="0,0,0,12"
                          Padding="6,4"
                          FontSize="13"/>
 
-                <TextBlock Grid.Row="8"
+                <TextBlock Grid.Row="9"
                            Text="Email"
                            Foreground="{DynamicResource TextBrush}"
                            Margin="0,0,0,4"/>
 
                 <TextBox x:Name="EmailTextBox"
-                         Grid.Row="9"
+                         Grid.Row="10"
                          Margin="0,0,0,8"
                          Padding="6,4"
                          FontSize="13"/>
 
                 <TextBlock x:Name="ValidationTextBlock"
-                           Grid.Row="10"
+                           Grid.Row="11"
                            Foreground="Red"
                            FontSize="12"
                            TextWrapping="Wrap"
                            Visibility="Collapsed"
                            Margin="0,0,0,12"/>
 
-                <StackPanel Grid.Row="11"
+                <StackPanel Grid.Row="12"
                             Orientation="Horizontal"
                             HorizontalAlignment="Right">
                         <Button x:Name="ContinueButton"

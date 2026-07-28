@@ -2,7 +2,7 @@ namespace PdfOverlayTool
 {
     /// <summary>
     /// Google Apps Script web app endpoint for beta registration and usage telemetry.
-    /// Configure via %LocalAppData%\PdfOverlayTool\telemetry.json (recommended) or WebAppUrl below.
+    /// Configure via %LocalAppData%\Overlay Compare Tool\telemetry.json (recommended) or WebAppUrl below.
     /// </summary>
     public static class TelemetryConfig
     {
